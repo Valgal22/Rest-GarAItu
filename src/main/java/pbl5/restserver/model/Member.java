@@ -6,60 +6,57 @@ import jakarta.persistence.*;
 @Table(name = "member")
 public class Member {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+  @Id
+  @GeneratedValue(strategy = GenerationType.IDENTITY)
+  private Long id;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "family_group_id", nullable = false)
-    private FamilyGroup familyGroup;
+  @ManyToOne(optional = false, fetch = FetchType.LAZY)
+  @JoinColumn(name = "family_group_id", nullable = false)
+  private FamilyGroup familyGroup;
 
-    @Column(nullable = false, length = 100)
-    private String name;
+  @Column(nullable = false, length = 100)
+  private String name;
 
-    @Column(length = 100)
-    private String relation;
+  @Column(length = 100)
+  private String context;
 
-    @Lob
-    private String description;
+  @Column(nullable = false)
+  private short role;
 
-    @Lob
-    @Column(name = "embedding")
-    private byte[] embedding;
+  @Column(name = "password_hash", length = 100)
+  private String passwordHash;
 
-    @Column(name = "model_version", length = 50)
-    private String modelVersion = "uniface-v1";
+  @Column(length = 50)
+  private String email;
 
-    public Member() {}
+  @Lob
+  @Basic(fetch = FetchType.LAZY)
+  @Column(name = "embedding", columnDefinition = "LONGBLOB")
+  private byte[] embedding;
 
-    public Member(FamilyGroup familyGroup, String name, String relation, String description, byte[] embedding, String modelVersion) {
-        this.familyGroup = familyGroup;
-        this.name = name;
-        this.relation = relation;
-        this.description = description;
-        this.embedding = embedding;
-        this.modelVersion = modelVersion;
-    }
+  public Member() {}
 
-    // getters/setters (incluye embedding y modelVersion)
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+  public Long getId() { return id; }
+  public void setId(Long id) { this.id = id; }
 
-    public FamilyGroup getFamilyGroup() { return familyGroup; }
-    public void setFamilyGroup(FamilyGroup familyGroup) { this.familyGroup = familyGroup; }
+  public FamilyGroup getFamilyGroup() { return familyGroup; }
+  public void setFamilyGroup(FamilyGroup familyGroup) { this.familyGroup = familyGroup; }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
+  public String getName() { return name; }
+  public void setName(String name) { this.name = name; }
 
-    public String getRelation() { return relation; }
-    public void setRelation(String relation) { this.relation = relation; }
+  public String getContext() { return context; }
+  public void setContext(String context) { this.context = context; }
 
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+  public short getRole() { return role; }
+  public void setRole(short role) { this.role = role; }
 
-    public byte[] getEmbedding() { return embedding; }
-    public void setEmbedding(byte[] embedding) { this.embedding = embedding; }
+  public String getPasswordHash() { return passwordHash; }
+  public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 
-    public String getModelVersion() { return modelVersion; }
-    public void setModelVersion(String modelVersion) { this.modelVersion = modelVersion; }
+  public String getEmail() { return email; }
+  public void setEmail(String email) { this.email = email; }
+
+  public byte[] getEmbedding() { return embedding; }
+  public void setEmbedding(byte[] embedding) { this.embedding = embedding; }
 }
