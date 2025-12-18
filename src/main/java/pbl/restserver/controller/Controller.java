@@ -1,20 +1,18 @@
-package pbl5.restserver.controller;
+package pbl.restserver.controller;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import pbl5.restserver.Repositories.FamilyGroupRepository;
-import pbl5.restserver.Repositories.MemberRepository;
-import pbl5.restserver.model.FamilyGroup;
-import pbl5.restserver.model.Member;
+import pbl.restserver.model.FamilyGroup;
+import pbl.restserver.model.Member;
+import pbl.restserver.repositories.FamilyGroupRepository;
+import pbl.restserver.repositories.MemberRepository;
 
-@CrossOrigin(maxAge = 3600)
 @RestController
 @RequestMapping("/garAItu")
 public class Controller {
@@ -48,19 +46,15 @@ public class Controller {
   public static record RegisterRequest(String name, String email, String password, String context, String inviteCode) {}
   public static record LoginRequest(String email, String password) {}
   public static record SessionResponse(String session, Long memberId, Long familyGroupId, short role) {}
-
   public static record GroupResponse(Long id, String name) {}
-
   public static record MemberResponse(Long id, Long familyGroupId, String name, String email, String context, short role, boolean hasEmbedding) {}
-
   public static record InviteResponse(String inviteCode, Long familyGroupId) {}
-
   public static record SetEmbeddingRequest(String embeddingBase64) {}
-
-  public static record RecognizeRequest(String embeddingBase64,
-                                       @RequestParam(required=false, defaultValue="0.0") double minSim,
-                                       @RequestParam(required=false, defaultValue="5") int top) {}
-
+  public static record RecognizeRequest(
+      String embeddingBase64,
+      @RequestParam(required = false, defaultValue = "0.0") double minSim,
+      @RequestParam(required = false, defaultValue = "5") int top
+  ) {}
   public static record RecognizeRow(Long memberId, String name, String email, String context, double similarity) {}
 
   // -------------------------
@@ -89,18 +83,23 @@ public class Controller {
   }
 
   private byte[] decodeBase64(String b64) {
-    if (b64 == null || b64.isBlank()) return null;
+    if (b64 == null || b64.isBlank()) {
+      return new byte[0];
+    }
     try {
       return Base64.getDecoder().decode(b64);
     } catch (IllegalArgumentException ex) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad embeddingBase64");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad embeddingBase64", ex);
     }
   }
 
   private float[] bytesToFloatArray(byte[] bytes) {
-    if (bytes == null || bytes.length == 0) return null;
-    if (bytes.length % 4 != 0)
+    if (bytes == null || bytes.length == 0) {
+      return new float[0];
+    }
+    if (bytes.length % 4 != 0) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad embedding bytes length");
+    }
 
     int n = bytes.length / 4;
     float[] out = new float[n];
@@ -116,8 +115,12 @@ public class Controller {
   }
 
   private double cosine(float[] a, float[] b) {
-    if (a == null || b == null || a.length != b.length) return -1.0;
-    double dot = 0, na = 0, nb = 0;
+    if (a.length == 0 || b.length == 0 || a.length != b.length) return -1.0;
+
+    double dot = 0; 
+    double na = 0; 
+    double nb = 0;
+
     for (int i = 0; i < a.length; i++) {
       dot += a[i] * b[i];
       na += a[i] * a[i];
@@ -147,7 +150,7 @@ public class Controller {
   // -------------------------
   // AUTH
   // -------------------------
-  @PostMapping(value="/auth/register", consumes=MediaType.APPLICATION_JSON_VALUE, produces=MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(value = "/auth/register", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<MemberResponse> register(@RequestBody RegisterRequest body) {
     if (body.name() == null || body.name().isBlank()
         || body.email() == null || body.email().isBlank()
@@ -172,14 +175,14 @@ public class Controller {
     m.setName(body.name());
     m.setEmail(body.email());
     m.setContext(body.context());
-    m.setRole(ROLE_MEMBER); // por defecto: conocido (2)
+    m.setRole(ROLE_MEMBER);
     m.setPasswordHash(passwordEncoder.encode(body.password()));
     m.setEmbedding(null);
 
     return ResponseEntity.status(HttpStatus.CREATED).body(toMemberResponse(memberRepo.save(m)));
   }
 
-  @PostMapping(value="/auth/login", consumes=MediaType.APPLICATION_JSON_VALUE, produces=MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(value = "/auth/login", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest body) {
     if (body.email() == null || body.email().isBlank()
         || body.password() == null || body.password().isBlank())
@@ -207,13 +210,13 @@ public class Controller {
   // -------------------------
   // GROUP / MEMBERS
   // -------------------------
-  @GetMapping(value="/group/me", produces=MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(value = "/group/me", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<GroupResponse> myGroup(@RequestHeader("X-Session-Id") String sessionId) {
     Member me = requireMemberFromSession(sessionId);
     return ResponseEntity.ok(toGroupResponse(me.getFamilyGroup()));
   }
 
-  @GetMapping(value="/group/{id}/member", produces=MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(value = "/group/{id}/member", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<List<MemberResponse>> getMembers(@RequestHeader("X-Session-Id") String sessionId,
                                                         @PathVariable Long id) {
     Member me = requireMemberFromSession(sessionId);
@@ -227,7 +230,7 @@ public class Controller {
   // -------------------------
   // INVITES (solo admin)
   // -------------------------
-  @PostMapping(value="/group/{id}/invite", produces=MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(value = "/group/{id}/invite", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<InviteResponse> createInvite(@RequestHeader("X-Session-Id") String sessionId,
                                                      @PathVariable Long id) {
     Member me = requireMemberFromSession(sessionId);
@@ -241,9 +244,9 @@ public class Controller {
   }
 
   // -------------------------
-  // EMBEDDING (admin puede editar a otros; cada uno puede editarse a sí mismo)
+  // EMBEDDING
   // -------------------------
-  @PutMapping(value="/member/{id}/embedding", consumes=MediaType.APPLICATION_JSON_VALUE, produces=MediaType.APPLICATION_JSON_VALUE)
+  @PutMapping(value = "/member/{id}/embedding", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<MemberResponse> setEmbedding(@RequestHeader("X-Session-Id") String sessionId,
                                                     @PathVariable Long id,
                                                     @RequestBody SetEmbeddingRequest body) {
@@ -256,7 +259,7 @@ public class Controller {
     if (!me.getId().equals(id)) requireAdmin(me);
 
     byte[] emb = decodeBase64(body.embeddingBase64());
-    if (emb == null || emb.length == 0)
+    if (emb.length == 0)
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
 
     target.setEmbedding(emb);
@@ -264,9 +267,9 @@ public class Controller {
   }
 
   // -------------------------
-  // RECOGNIZE FACE (POST) en el grupo
+  // RECOGNIZE
   // -------------------------
-  @PostMapping(value="/group/{id}/recognize", consumes=MediaType.APPLICATION_JSON_VALUE, produces=MediaType.APPLICATION_JSON_VALUE)
+  @PostMapping(value = "/group/{id}/recognize", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<List<RecognizeRow>> recognize(@RequestHeader("X-Session-Id") String sessionId,
                                                      @PathVariable Long id,
                                                      @RequestBody RecognizeRequest body) {
@@ -274,7 +277,7 @@ public class Controller {
     requireSameGroup(me, id);
 
     byte[] queryBytes = decodeBase64(body.embeddingBase64());
-    if (queryBytes == null || queryBytes.length == 0)
+    if (queryBytes.length == 0)
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
 
     float[] q = bytesToFloatArray(queryBytes);
@@ -295,7 +298,7 @@ public class Controller {
             e.getKey().getContext(),
             e.getValue()
         ))
-        .collect(Collectors.toList());
+        .toList();
 
     return ResponseEntity.ok(ranked);
   }
