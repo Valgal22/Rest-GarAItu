@@ -1,4 +1,4 @@
-package pbl5.restserver.config;
+package pbl.restserver.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

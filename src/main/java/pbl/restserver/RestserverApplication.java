@@ -1,4 +1,4 @@
-package pbl5.restserver;
+package pbl.restserver;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

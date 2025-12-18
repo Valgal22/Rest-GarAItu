@@ -1,8 +1,8 @@
-package pbl5.restserver.Repositories;
+package pbl.restserver.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import pbl5.restserver.model.FamilyGroup;
+import pbl.restserver.model.FamilyGroup;
 
 public interface FamilyGroupRepository extends JpaRepository<FamilyGroup, Long> {
     

@@ -1,4 +1,4 @@
-package pbl5.restserver.model;
+package pbl.restserver.model;
 
 import jakarta.persistence.*;
 

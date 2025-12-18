@@ -1,4 +1,4 @@
-package pbl5.restserver.model;
+package pbl.restserver.model;
 
 import jakarta.persistence.*;
 
@@ -34,7 +34,12 @@ public class Member {
   @Column(name = "embedding", columnDefinition = "LONGBLOB")
   private byte[] embedding;
 
-  public Member() {}
+    /**
+   * Default constructor required by JPA/Hibernate.
+   */
+  public Member() {
+    //No need to add anything
+  }
 
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
