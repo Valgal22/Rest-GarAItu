@@ -25,6 +25,10 @@ jobs:
           java-version: 17
           cache: maven
 
+      # 🔧 DAR PERMISOS AL MAVEN WRAPPER
+      - name: Grant execute permission to mvnw
+        run: chmod +x mvnw
+
       # 3️⃣ Ejecutar tests con Maven
       - name: Run tests
         run: ./mvnw clean test
@@ -42,6 +46,4 @@ jobs:
             -Dsonar.projectKey=StaticAnalisis_LEZGuard_WEB \
             -Dsonar.organization=TU_ORGANIZACION \
             -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.java.coveragePlugin=jacoco \
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            -Dsonar.login=$SONAR

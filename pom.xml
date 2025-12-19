@@ -33,7 +33,6 @@
         <version>2.5.0</version>
     </dependency>
 
-    <!-- Si te da igual webmvc vs web, recomiendo starter-web -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
@@ -50,7 +49,7 @@
       <scope>runtime</scope>
     </dependency>
 
-    <!-- Tests (JUnit 5 + Mockito + AssertJ + etc.) -->
+    <!-- Tests -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
@@ -65,7 +64,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
       </plugin>
 
-      <!-- Coverage para Sonar -->
+      <!-- Plugin JaCoCo para cobertura -->
       <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
