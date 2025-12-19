@@ -1,4 +1,4 @@
-name: CI - Maven Tests
+name: CI - Maven Tests & SonarCloud
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  build-and-analyze:
     runs-on: ubuntu-latest
 
     steps:
@@ -23,7 +23,12 @@ jobs:
 
       - name: Run tests
         run: ./mvnw clean test
- - name: SonarCloud Analysis
+
+      # ✅ Aseguramos que JaCoCo genere el XML
+      - name: Generate JaCoCo report
+        run: ./mvnw jacoco:report
+
+      - name: SonarCloud Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
