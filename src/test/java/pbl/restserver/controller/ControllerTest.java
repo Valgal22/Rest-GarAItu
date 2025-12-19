@@ -147,13 +147,19 @@ class ControllerTest {
   void getMembers_forbidden_otherGroup() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
+    Long g2Id = g2.getId(); // extracted
+
     Member me = member(1L, g1, ROLE_MEMBER);
     bindSession("S", me);
 
-    ResponseStatusException ex =
-        assertThrows(ResponseStatusException.class, () -> controller.getMembers("S", g2.getId()));
+    ResponseStatusException ex = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.getMembers("S", g2Id)
+    );
+
     assertStatus(ex, HttpStatus.FORBIDDEN);
   }
+
 
   @Test
   void getMembers_ok_mapsMembers_andHasEmbeddingTrueFalse() {
@@ -195,11 +201,16 @@ class ControllerTest {
   void createInvite_forbidden_otherGroup_evenIfAdmin() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
+    Long g2Id = g2.getId(); // extracted
+
     Member admin = member(1L, g1, ROLE_ADMIN);
     bindSession("S", admin);
 
-    ResponseStatusException ex =
-        assertThrows(ResponseStatusException.class, () -> controller.createInvite("S", g2.getId()));
+    ResponseStatusException ex = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.createInvite("S", g2Id)
+    );
+
     assertStatus(ex, HttpStatus.FORBIDDEN);
   }
 
@@ -499,13 +510,19 @@ class ControllerTest {
   void recognize_forbidden_otherGroup() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
+    Long g2Id = g2.getId(); // moved out (fixes Sonar)
 
     Member me = member(1L, g1, ROLE_MEMBER);
     bindSession("S", me);
 
-    Controller.RecognizeRequest req = new Controller.RecognizeRequest(b64FromFloats(1f, 0f), 0.0, 5);
-    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-        () -> controller.recognize("S", g2.getId(), req));
+    Controller.RecognizeRequest req =
+        new Controller.RecognizeRequest(b64FromFloats(1f, 0f), 0.0, 5);
+
+    ResponseStatusException ex = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.recognize("S", g2Id, req)
+    );
+
     assertStatus(ex, HttpStatus.FORBIDDEN);
   }
 
