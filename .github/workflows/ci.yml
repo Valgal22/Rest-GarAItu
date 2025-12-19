@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1 Checkout repository
+      # 1️⃣ Checkout del repositorio
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2 Set up Java 17
+      # 2️⃣ Configurar Java 17 y cache de Maven
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -25,19 +25,19 @@ jobs:
           java-version: 17
           cache: maven
 
-      # 3 Grant execute permission to mvnw
+      # 3️⃣ Dar permisos al Maven wrapper
       - name: Grant execute permission to mvnw
         run: chmod +x mvnw
 
-      # 4 Run tests
+      # 4️⃣ Ejecutar tests con Maven
       - name: Run tests
         run: ./mvnw clean test
 
-      # 5 Generate JaCoCo report
+      # 5️⃣ Generar reporte JaCoCo para cobertura
       - name: Generate JaCoCo report
         run: ./mvnw jacoco:report
 
-      # 6 SonarCloud Scan
+      # 6️⃣ Analizar en SonarCloud usando la nueva acción
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         with:
