@@ -25,7 +25,7 @@ jobs:
           java-version: 17
           cache: maven
 
-      # 🔧 DAR PERMISOS AL MAVEN WRAPPER
+      # 🔧 Dar permisos al Maven wrapper
       - name: Grant execute permission to mvnw
         run: chmod +x mvnw
 
@@ -37,13 +37,10 @@ jobs:
       - name: Generate JaCoCo report
         run: ./mvnw jacoco:report
 
-      # 5️⃣ Analizar en SonarCloud
-      - name: SonarCloud Analysis
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          ./mvnw sonar:sonar \
-            -Dsonar.projectKey=Valgal22_Rest-GarAItu \
-            -Dsonar.organization=GarAitu \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR
+      # 5️⃣ Analizar en SonarCloud (acción oficial)
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        with:
+          projectKey: Valgal22_Rest-GarAltu
+          organization: garaitu
+          token: ${{ secrets.SONAR_TOKEN }}
