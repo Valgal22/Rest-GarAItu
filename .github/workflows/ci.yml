@@ -37,10 +37,11 @@ jobs:
       - name: Generate JaCoCo report
         run: ./mvnw jacoco:report
 
-      # 5️⃣ Analizar en SonarCloud (acción oficial)
+      # 5️⃣ Analizar en SonarCloud con la acción nueva
       - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
         with:
-          projectKey: Valgal22_Rest-GarAltu
-          organization: garaitu
-          token: ${{ secrets.SONAR_TOKEN }}
+          args: >
+            -Dsonar.projectKey=Valgal22_Rest-GarAltu
+            -Dsonar.organization=garaitu
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
