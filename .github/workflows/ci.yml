@@ -24,7 +24,6 @@ jobs:
       - name: Run tests
         run: ./mvnw clean test
 
-      # ✅ Aseguramos que JaCoCo genere el XML
       - name: Generate JaCoCo report
         run: ./mvnw jacoco:report
 
