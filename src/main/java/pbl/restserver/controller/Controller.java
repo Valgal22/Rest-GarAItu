@@ -18,9 +18,9 @@ import pbl.restserver.repositories.MemberRepository;
 public class Controller {
 
   // Roles: admin 0, patient 1, member 2
-  private static final short ROLE_ADMIN   = 0;
+  private static final short ROLE_ADMIN = 0;
   private static final short ROLE_PATIENT = 1;
-  private static final short ROLE_MEMBER  = 2;
+  private static final short ROLE_MEMBER = 2;
 
   private final FamilyGroupRepository groupRepo;
   private final MemberRepository memberRepo;
@@ -33,8 +33,8 @@ public class Controller {
   private final Map<String, Long> invites = new ConcurrentHashMap<>();
 
   public Controller(FamilyGroupRepository groupRepo,
-                    MemberRepository memberRepo,
-                    PasswordEncoder passwordEncoder) {
+      MemberRepository memberRepo,
+      PasswordEncoder passwordEncoder) {
     this.groupRepo = groupRepo;
     this.memberRepo = memberRepo;
     this.passwordEncoder = passwordEncoder;
@@ -43,19 +43,42 @@ public class Controller {
   // -------------------------
   // DTOs
   // -------------------------
-  public static record RegisterRequest(String name, String email, String password, String context, String inviteCode) {}
-  public static record LoginRequest(String email, String password) {}
-  public static record SessionResponse(String session, Long memberId, Long familyGroupId, short role) {}
-  public static record GroupResponse(Long id, String name) {}
-  public static record MemberResponse(Long id, Long familyGroupId, String name, String email, String context, short role, boolean hasEmbedding) {}
-  public static record InviteResponse(String inviteCode, Long familyGroupId) {}
-  public static record SetEmbeddingRequest(String embeddingBase64) {}
+  public static record RegisterRequest(String name, String email, String password, String context, short role) {
+  }
+
+  public static record LoginRequest(String email, String password) {
+  }
+
+  public static record SessionResponse(String session, Long memberId, Long familyGroupId, short role) {
+  }
+
+  public static record GroupResponse(Long id, String name) {
+  }
+
+  public static record CreateGroupRequest(String name) {
+  }
+
+  public static record JoinGroupRequest(String inviteCode) {
+  }
+
+  public static record MemberResponse(Long id, Long familyGroupId, String name, String email, String context,
+      short role, boolean hasEmbedding) {
+  }
+
+  public static record InviteResponse(String inviteCode, Long familyGroupId) {
+  }
+
+  public static record SetEmbeddingRequest(String embeddingBase64) {
+  }
+
   public static record RecognizeRequest(
       String embeddingBase64,
       @RequestParam(required = false, defaultValue = "0.0") double minSim,
-      @RequestParam(required = false, defaultValue = "5") int top
-  ) {}
-  public static record RecognizeRow(Long memberId, String name, String email, String context, double similarity) {}
+      @RequestParam(required = false, defaultValue = "5") int top) {
+  }
+
+  public static record RecognizeRow(Long memberId, String name, String email, String context, double similarity) {
+  }
 
   // -------------------------
   // Helpers
@@ -78,7 +101,7 @@ public class Controller {
   }
 
   private void requireSameGroup(Member me, Long groupId) {
-    if (!me.getFamilyGroup().getId().equals(groupId))
+    if (me.getFamilyGroup() == null || !me.getFamilyGroup().getId().equals(groupId))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
   }
 
@@ -106,19 +129,20 @@ public class Controller {
     for (int i = 0; i < n; i++) {
       int base = i * 4;
       int bits = ((bytes[base] & 0xFF) << 24)
-               | ((bytes[base + 1] & 0xFF) << 16)
-               | ((bytes[base + 2] & 0xFF) << 8)
-               |  (bytes[base + 3] & 0xFF);
+          | ((bytes[base + 1] & 0xFF) << 16)
+          | ((bytes[base + 2] & 0xFF) << 8)
+          | (bytes[base + 3] & 0xFF);
       out[i] = Float.intBitsToFloat(bits);
     }
     return out;
   }
 
   private double cosine(float[] a, float[] b) {
-    if (a.length == 0 || b.length == 0 || a.length != b.length) return -1.0;
+    if (a.length == 0 || b.length == 0 || a.length != b.length)
+      return -1.0;
 
-    double dot = 0; 
-    double na = 0; 
+    double dot = 0;
+    double na = 0;
     double nb = 0;
 
     for (int i = 0; i < a.length; i++) {
@@ -126,25 +150,28 @@ public class Controller {
       na += a[i] * a[i];
       nb += b[i] * b[i];
     }
-    if (na == 0 || nb == 0) return -1.0;
+    if (na == 0 || nb == 0)
+      return -1.0;
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
   private GroupResponse toGroupResponse(FamilyGroup g) {
+    if (g == null)
+      return null;
     return new GroupResponse(g.getId(), g.getName());
   }
 
   private MemberResponse toMemberResponse(Member m) {
     boolean hasEmb = m.getEmbedding() != null && m.getEmbedding().length > 0;
+    Long gId = (m.getFamilyGroup() != null) ? m.getFamilyGroup().getId() : null;
     return new MemberResponse(
         m.getId(),
-        m.getFamilyGroup().getId(),
+        gId,
         m.getName(),
         m.getEmail(),
         m.getContext(),
         m.getRole(),
-        hasEmb
-    );
+        hasEmb);
   }
 
   // -------------------------
@@ -157,25 +184,15 @@ public class Controller {
         || body.password() == null || body.password().isBlank())
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name, email and password required");
 
-    if (body.inviteCode() == null || body.inviteCode().isBlank())
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "inviteCode required");
-
     if (memberRepo.findByEmail(body.email()).isPresent())
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
 
-    Long groupId = invites.get(body.inviteCode());
-    if (groupId == null)
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode");
-
-    FamilyGroup g = groupRepo.findById(groupId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invite group not found"));
-
     Member m = new Member();
-    m.setFamilyGroup(g);
     m.setName(body.name());
     m.setEmail(body.email());
     m.setContext(body.context());
-    m.setRole(ROLE_MEMBER);
+    m.setRole(body.role());
+
     m.setPasswordHash(passwordEncoder.encode(body.password()));
     m.setEmbedding(null);
 
@@ -197,8 +214,9 @@ public class Controller {
     String token = UUID.randomUUID().toString();
     sessions.put(token, m.getId());
 
+    Long gId = (m.getFamilyGroup() != null) ? m.getFamilyGroup().getId() : null;
     return ResponseEntity.status(HttpStatus.CREATED)
-        .body(new SessionResponse(token, m.getId(), m.getFamilyGroup().getId(), m.getRole()));
+        .body(new SessionResponse(token, m.getId(), gId, m.getRole()));
   }
 
   @DeleteMapping("/auth/logout/{sessionId}")
@@ -218,13 +236,47 @@ public class Controller {
 
   @GetMapping(value = "/group/{id}/member", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<List<MemberResponse>> getMembers(@RequestHeader("X-Session-Id") String sessionId,
-                                                        @PathVariable Long id) {
+      @PathVariable Long id) {
     Member me = requireMemberFromSession(sessionId);
     requireSameGroup(me, id);
 
     return ResponseEntity.ok(
-        memberRepo.findByFamilyGroupId(id).stream().map(this::toMemberResponse).toList()
-    );
+        memberRepo.findByFamilyGroupId(id).stream().map(this::toMemberResponse).toList());
+  }
+
+  @PostMapping(value = "/group/create", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<GroupResponse> createGroup(@RequestHeader("X-Session-Id") String sessionId,
+      @RequestBody CreateGroupRequest body) {
+    Member me = requireMemberFromSession(sessionId);
+    requireAdmin(me);
+
+    FamilyGroup g = new FamilyGroup();
+    g.setName(body.name());
+    g = groupRepo.save(g);
+
+    me.setFamilyGroup(g);
+    memberRepo.save(me);
+
+    return ResponseEntity.status(HttpStatus.CREATED).body(toGroupResponse(g));
+  }
+
+  @PostMapping(value = "/group/join", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<MemberResponse> joinGroup(@RequestHeader("X-Session-Id") String sessionId,
+      @RequestBody JoinGroupRequest body) {
+    Member me = requireMemberFromSession(sessionId);
+
+    if (body.inviteCode() == null || body.inviteCode().isBlank())
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "inviteCode required");
+
+    Long groupId = invites.get(body.inviteCode());
+    if (groupId == null)
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode");
+
+    FamilyGroup g = groupRepo.findById(groupId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Group not found"));
+
+    me.setFamilyGroup(g);
+    return ResponseEntity.ok(toMemberResponse(memberRepo.save(me)));
   }
 
   // -------------------------
@@ -232,12 +284,12 @@ public class Controller {
   // -------------------------
   @PostMapping(value = "/group/{id}/invite", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<InviteResponse> createInvite(@RequestHeader("X-Session-Id") String sessionId,
-                                                     @PathVariable Long id) {
+      @PathVariable Long id) {
     Member me = requireMemberFromSession(sessionId);
     requireAdmin(me);
     requireSameGroup(me, id);
 
-    String code = UUID.randomUUID().toString();
+    String code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     invites.put(code, id);
 
     return ResponseEntity.status(HttpStatus.CREATED).body(new InviteResponse(code, id));
@@ -248,15 +300,16 @@ public class Controller {
   // -------------------------
   @PutMapping(value = "/member/{id}/embedding", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<MemberResponse> setEmbedding(@RequestHeader("X-Session-Id") String sessionId,
-                                                    @PathVariable Long id,
-                                                    @RequestBody SetEmbeddingRequest body) {
+      @PathVariable Long id,
+      @RequestBody SetEmbeddingRequest body) {
     Member me = requireMemberFromSession(sessionId);
 
     Member target = memberRepo.findById(id)
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No member"));
 
     requireSameGroup(me, target.getFamilyGroup().getId());
-    if (!me.getId().equals(id)) requireAdmin(me);
+    if (!me.getId().equals(id))
+      requireAdmin(me);
 
     byte[] emb = decodeBase64(body.embeddingBase64());
     if (emb.length == 0)
@@ -271,8 +324,8 @@ public class Controller {
   // -------------------------
   @PostMapping(value = "/group/{id}/recognize", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<List<RecognizeRow>> recognize(@RequestHeader("X-Session-Id") String sessionId,
-                                                     @PathVariable Long id,
-                                                     @RequestBody RecognizeRequest body) {
+      @PathVariable Long id,
+      @RequestBody RecognizeRequest body) {
     Member me = requireMemberFromSession(sessionId);
     requireSameGroup(me, id);
 
@@ -296,8 +349,7 @@ public class Controller {
             e.getKey().getName(),
             e.getKey().getEmail(),
             e.getKey().getContext(),
-            e.getValue()
-        ))
+            e.getValue()))
         .toList();
 
     return ResponseEntity.ok(ranked);

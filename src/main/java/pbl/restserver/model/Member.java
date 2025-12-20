@@ -10,8 +10,8 @@ public class Member {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @ManyToOne(optional = false, fetch = FetchType.LAZY)
-  @JoinColumn(name = "family_group_id", nullable = false)
+  @ManyToOne(optional = true, fetch = FetchType.LAZY)
+  @JoinColumn(name = "family_group_id", nullable = true)
   private FamilyGroup familyGroup;
 
   @Column(nullable = false, length = 100)
@@ -45,7 +45,7 @@ public class Member {
   public void setId(Long id) { this.id = id; }
 
   public FamilyGroup getFamilyGroup() { return familyGroup; }
-  public void setFamilyGroup(FamilyGroup familyGroup) { this.familyGroup = familyGroup; }
+  public void setFamilyGroup(FamilyGroup familyGroup) { this.familyGroup = familyGroup; }      
 
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
@@ -57,7 +57,7 @@ public class Member {
   public void setRole(short role) { this.role = role; }
 
   public String getPasswordHash() { return passwordHash; }
-  public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+  public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }       
 
   public String getEmail() { return email; }
   public void setEmail(String email) { this.email = email; }
