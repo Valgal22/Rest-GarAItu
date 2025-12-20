@@ -7,11 +7,11 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.0.0</version>
+    <version>3.4.1</version>
     <relativePath/>
   </parent>
 
-  <groupId>pbl5</groupId>
+  <groupId>pbl</groupId>
   <artifactId>restserver</artifactId>
   <version>0.0.1-SNAPSHOT</version>
 
@@ -36,6 +36,11 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
     <dependency>

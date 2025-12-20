@@ -205,11 +205,11 @@ public class Controller {
         || body.password() == null || body.password().isBlank())
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email and password required");
 
-    Member m = memberRepo.findByEmail(body.email())
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Bad credentials"));
+     Member m = memberRepo.findByEmail(body.email())
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "The email address is not registered"));
 
     if (m.getPasswordHash() == null || !passwordEncoder.matches(body.password(), m.getPasswordHash()))
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Bad credentials");
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
 
     String token = UUID.randomUUID().toString();
     sessions.put(token, m.getId());
