@@ -80,6 +80,8 @@ public class Controller {
   public static record RecognizeRow(Long memberId, String name, String email, String context, double similarity) {
   }
 
+  public static record CreateMemoryRequest(String name, String context, String embeddingBase64) {}
+
   // -------------------------
   // Helpers
   // -------------------------
@@ -242,6 +244,32 @@ public class Controller {
 
     return ResponseEntity.ok(
         memberRepo.findByFamilyGroupId(id).stream().map(this::toMemberResponse).toList());
+  }
+
+  @PostMapping(value = "/group/memory", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<MemberResponse> createMemory(@RequestHeader("X-Session-Id") String sessionId,
+      @RequestBody CreateMemoryRequest body) {
+    Member me = requireMemberFromSession(sessionId);
+    FamilyGroup g = me.getFamilyGroup();
+    if (g == null)
+       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in a group");
+
+    if (body.name() == null || body.name().isBlank())
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name required");
+
+    byte[] emb = decodeBase64(body.embeddingBase64());
+    if (emb.length == 0)
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+
+    Member m = new Member();
+    m.setName(body.name());
+    m.setContext(body.context());
+    m.setFamilyGroup(g);
+    m.setRole(ROLE_MEMBER); // Passive member
+    m.setEmbedding(emb);
+    // No email/password for memories
+
+    return ResponseEntity.status(HttpStatus.CREATED).body(toMemberResponse(memberRepo.save(m)));
   }
 
   @PostMapping(value = "/group/create", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
