@@ -80,6 +80,7 @@ class ControllerTest {
     m.setName("N" + id);
     m.setEmail("e" + id + "@x.com");
     m.setContext("ctx" + id);
+    m.setPasswordHash("HASH");
     return m;
   }
 
@@ -107,7 +108,13 @@ class ControllerTest {
   // myGroup
   // -------------------------
   static Stream<String> invalidSessions() {
-    return Stream.of(null, "   ", "NOPE");
+    return Stream.of("   ", "NOPE");
+  }
+
+  @Test
+  void myGroup_nullSession_unauthorized() {
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.myGroup(null));
+    assertStatus(ex, HttpStatus.UNAUTHORIZED);
   }
 
   @ParameterizedTest
@@ -146,7 +153,7 @@ class ControllerTest {
   void getMembers_forbidden_otherGroup() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
-    Long g2Id = g2.getId(); // extracted
+    Long g2Id = g2.getId();
 
     Member me = member(1L, g1, ROLE_MEMBER);
     bindSession("S", me);
@@ -181,6 +188,173 @@ class ControllerTest {
   }
 
   // -------------------------
+  // createMemory
+  // -------------------------
+  @Test
+  void createMemory_badRequest_userNotInGroup() {
+    Member me = member(1L, null, ROLE_MEMBER);
+    me.setFamilyGroup(null);
+    bindSession("S", me);
+
+    Controller.CreateMemoryRequest req = new Controller.CreateMemoryRequest("m", "c", b64FromFloats(1f, 0f));
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.createMemory("S", req));
+    assertStatus(ex, HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void createMemory_badRequest_nameRequired() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    Controller.CreateMemoryRequest req = new Controller.CreateMemoryRequest("   ", "ctx", b64FromFloats(1f, 0f));
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.createMemory("S", req));
+    assertStatus(ex, HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void createMemory_badRequest_embeddingRequired() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    Controller.CreateMemoryRequest req = new Controller.CreateMemoryRequest("Name", "ctx", "   ");
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.createMemory("S", req));
+    assertStatus(ex, HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void createMemory_ok_createsPassiveMemberWithEmbedding() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    when(memberRepo.save(any(Member.class))).thenAnswer(inv -> {
+      Member m = inv.getArgument(0);
+      m.setId(88L);
+      return m;
+    });
+
+    Controller.CreateMemoryRequest req = new Controller.CreateMemoryRequest("Memory", "ctx", b64FromFloats(1f, 0f));
+    ResponseEntity<Controller.MemberResponse> resp = controller.createMemory("S", req);
+
+    assertEquals(HttpStatus.CREATED, resp.getStatusCode());
+    assertNotNull(resp.getBody());
+    assertEquals(88L, resp.getBody().id());
+    assertTrue(resp.getBody().hasEmbedding());
+    assertEquals(10L, resp.getBody().familyGroupId());
+  }
+
+  // -------------------------
+  // createGroup
+  // -------------------------
+  @Test
+  void createGroup_forbidden_notAdmin() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    Controller.CreateGroupRequest req = new Controller.CreateGroupRequest("NewGroup");
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.createGroup("S", req));
+    assertStatus(ex, HttpStatus.FORBIDDEN);
+  }
+
+  @Test
+  void createGroup_ok_adminCreatesAndMemberUpdated() {
+    FamilyGroup oldGroup = group(10L, "OLD");
+    Member admin = member(1L, oldGroup, ROLE_ADMIN);
+    bindSession("S", admin);
+
+    when(groupRepo.save(any(FamilyGroup.class))).thenAnswer(inv -> {
+      FamilyGroup g = inv.getArgument(0);
+      g.setId(99L);
+      return g;
+    });
+
+    when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    Controller.CreateGroupRequest req = new Controller.CreateGroupRequest("NewGroup");
+    ResponseEntity<Controller.GroupResponse> resp = controller.createGroup("S", req);
+
+    assertEquals(HttpStatus.CREATED, resp.getStatusCode());
+    assertNotNull(resp.getBody());
+    assertEquals(99L, resp.getBody().id());
+    assertEquals("NewGroup", resp.getBody().name());
+  }
+
+  // -------------------------
+  // joinGroup
+  // -------------------------
+  @Test
+  void joinGroup_badRequest_inviteRequired() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("   ");
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.joinGroup("S", req));
+    assertStatus(ex, HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void joinGroup_badRequest_invalidInviteCode() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("INVALID");
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.joinGroup("S", req));
+    assertStatus(ex, HttpStatus.BAD_REQUEST);
+  }
+
+  @Test
+  void joinGroup_internalError_groupNotFoundInRepo() {
+    FamilyGroup g = group(10L, "G");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    invites().put("CODE", 77L);
+    when(groupRepo.findById(77L)).thenReturn(Optional.empty());
+
+    Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("CODE");
+
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.joinGroup("S", req));
+    assertStatus(ex, HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  @Test
+  void joinGroup_ok_updatesMemberGroup() {
+    FamilyGroup g = group(10L, "G");
+    FamilyGroup g2 = group(20L, "G2");
+    Member me = member(1L, g, ROLE_MEMBER);
+    bindSession("S", me);
+
+    invites().put("CODE", 20L);
+    when(groupRepo.findById(20L)).thenReturn(Optional.of(g2));
+    when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("CODE");
+    ResponseEntity<Controller.MemberResponse> resp = controller.joinGroup("S", req);
+
+    assertEquals(HttpStatus.OK, resp.getStatusCode());
+    assertNotNull(resp.getBody());
+    assertEquals(20L, resp.getBody().familyGroupId());
+  }
+
+  // -------------------------
   // createInvite
   // -------------------------
   @Test
@@ -197,7 +371,7 @@ class ControllerTest {
   void createInvite_forbidden_otherGroup_evenIfAdmin() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
-    Long g2Id = g2.getId(); // extracted
+    Long g2Id = g2.getId();
 
     Member admin = member(1L, g1, ROLE_ADMIN);
     bindSession("S", admin);
@@ -241,30 +415,12 @@ class ControllerTest {
   }
 
   @Test
-  void register_badRequest_inviteRequired() {
-    // Note: invite is no longer required at register, but we need it to compile
-    Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER);
-    // This test might fail now logic-wise, but we avoid compilation error
-    // assertThrows(ResponseStatusException.class, () -> controller.register(req));
-  }
-
-  @Test
   void register_conflict_emailExists() {
     when(memberRepo.findByEmail("a@b.com")).thenReturn(Optional.of(new Member()));
-
     Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER);
+
     ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.register(req));
     assertStatus(ex, HttpStatus.CONFLICT);
-  }
-
-  @Test
-  void register_badRequest_invalidInviteCode() {
-    // Obsolete test as register no longer takes invite code
-  }
-
-  @Test
-  void register_badRequest_inviteGroupNotFoundInRepo() {
-    // Obsolete test
   }
 
   @Test
@@ -458,7 +614,7 @@ class ControllerTest {
     when(memberRepo.findById(1L)).thenReturn(Optional.of(me));
     when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
 
-    String embB64 = Base64.getEncoder().encodeToString(bytesFromFloats(1f, 0f));
+    String embB64 = b64FromFloats(1f, 0f);
     Controller.SetEmbeddingRequest req = new Controller.SetEmbeddingRequest(embB64);
 
     ResponseEntity<Controller.MemberResponse> resp = controller.setEmbedding("S", 1L, req);
@@ -492,7 +648,7 @@ class ControllerTest {
   void recognize_forbidden_otherGroup() {
     FamilyGroup g1 = group(10L, "G1");
     FamilyGroup g2 = group(20L, "G2");
-    Long g2Id = g2.getId(); // moved out (fixes Sonar)
+    Long g2Id = g2.getId();
 
     Member me = member(1L, g1, ROLE_MEMBER);
     bindSession("S", me);

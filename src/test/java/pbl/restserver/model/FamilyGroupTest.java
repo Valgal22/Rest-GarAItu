@@ -7,6 +7,14 @@ import org.junit.jupiter.api.Test;
 class FamilyGroupTest {
 
   @Test
+  void emptyConstructor_initializesNullFields() {
+    FamilyGroup g = new FamilyGroup();
+
+    assertNull(g.getId());
+    assertNull(g.getName());
+  }
+
+  @Test
   void constructorAndGettersSetters_work() {
     FamilyGroup g = new FamilyGroup("Mi Familia");
     assertEquals("Mi Familia", g.getName());
