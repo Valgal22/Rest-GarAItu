@@ -26,11 +26,13 @@ jobs:
       - name: Grant execute permission to mvnw
         run: chmod +x mvnw
 
-      - name: Compile and run tests
-        run: ./mvnw clean package
+      # Ejecuta tests y genera el reporte JaCoCo XML automáticamente (por el pom)
+      - name: Run tests + JaCoCo report
+        run: ./mvnw clean test jacoco:report
 
-      - name: Generate JaCoCo report
-        run: ./mvnw jacoco:report
+      # Opcional: útil para verificar que existe el xml
+      - name: Debug JaCoCo XML
+        run: ls -l target/site/jacoco || true
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
@@ -38,6 +40,6 @@ jobs:
           args: >
             -Dsonar.projectKey=Valgal22_Rest-GarAItu
             -Dsonar.organization=garaitu
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }}
             -Dsonar.java.binaries=target/classes
-            -Dsonar.coverage.exclusions=*/src/test/*
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
