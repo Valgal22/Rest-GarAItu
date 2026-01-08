@@ -26,11 +26,10 @@ jobs:
       - name: Grant execute permission to mvnw
         run: chmod +x mvnw
 
-      # Ejecuta tests y genera el reporte JaCoCo XML automáticamente (por el pom)
       - name: Run tests + JaCoCo report
         run: ./mvnw clean test jacoco:report
 
-      # Opcional: útil para verificar que existe el xml
+      # (Opcional) para comprobar que existe jacoco.xml en el pipeline
       - name: Debug JaCoCo XML
         run: ls -l target/site/jacoco || true
 
@@ -41,5 +40,8 @@ jobs:
             -Dsonar.projectKey=Valgal22_Rest-GarAItu
             -Dsonar.organization=garaitu
             -Dsonar.token=${{ secrets.SONAR_TOKEN }}
+            -Dsonar.sources=src/main/java
+            -Dsonar.tests=src/test/java
+            -Dsonar.test.inclusions=src/test/java/**/*.java
             -Dsonar.java.binaries=target/classes
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
