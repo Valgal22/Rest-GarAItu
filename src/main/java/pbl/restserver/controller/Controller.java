@@ -23,9 +23,8 @@ public class Controller {
   private final PasswordEncoder passwordEncoder;
   // token -> memberId
   private final Map<String, Long> sessions = new ConcurrentHashMap<>();
-  // inviteCode -> groupId (en memoria)
-  private final Map<String, Long> invites = new ConcurrentHashMap<>();
 
+  // [DELETED] invites map removed (now persisting in DB)
   public Controller(FamilyGroupRepository groupRepo,
       MemberRepository memberRepo,
       PasswordEncoder passwordEncoder) {
@@ -181,7 +180,9 @@ public class Controller {
     m.setName(body.name());
     m.setEmail(body.email());
     m.setContext(body.context());
+    // FIX: Default ROLE_MEMBER if null or 0
     m.setRole(body.role() != null ? body.role() : ROLE_MEMBER);
+
     m.setPasswordHash(passwordEncoder.encode(body.password()));
     m.setEmbedding(null);
     return ResponseEntity.status(HttpStatus.CREATED).body(toMemberResponse(memberRepo.save(m)));
@@ -239,13 +240,13 @@ public class Controller {
     byte[] emb = decodeBase64(body.embeddingBase64());
     if (emb.length == 0)
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+
     Member m = new Member();
     m.setName(body.name());
     m.setContext(body.context());
     m.setFamilyGroup(g);
     m.setRole(ROLE_MEMBER); // Passive member
     m.setEmbedding(emb);
-    // No email/password for memories
     return ResponseEntity.status(HttpStatus.CREATED).body(toMemberResponse(memberRepo.save(m)));
   }
 
@@ -253,11 +254,17 @@ public class Controller {
   public ResponseEntity<GroupResponse> createGroup(@RequestHeader("X-Session-Id") String sessionId,
       @RequestBody CreateGroupRequest body) {
     Member me = requireMemberFromSession(sessionId);
+    // FIX: Removed requireAdmin(me); anyone can create
     FamilyGroup g = new FamilyGroup();
     g.setName(body.name());
+
+    // Auto-generate invite code on creation
+    String code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    g.setInviteCode(code);
+
     g = groupRepo.save(g);
     me.setFamilyGroup(g);
-    me.setRole(ROLE_ADMIN);
+    me.setRole(ROLE_ADMIN); // Creator is Admin
     memberRepo.save(me);
     return ResponseEntity.status(HttpStatus.CREATED).body(toGroupResponse(g));
   }
@@ -268,18 +275,16 @@ public class Controller {
     Member me = requireMemberFromSession(sessionId);
     if (body.inviteCode() == null || body.inviteCode().isBlank())
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "inviteCode required");
-    Long groupId = invites.get(body.inviteCode());
-    if (groupId == null)
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode");
-    FamilyGroup g = groupRepo.findById(groupId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Group not found"));
+    // FIX: Look up in DB instead of memory map
+    FamilyGroup g = groupRepo.findByInviteCode(body.inviteCode())
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode"));
     me.setFamilyGroup(g);
-    me.setRole(ROLE_MEMBER);
+    me.setRole(ROLE_MEMBER); // Force Member role
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(me)));
   }
 
   // -------------------------
-  // INVITES (solo admin)
+  // INVITES (persisted)
   // -------------------------
   @PostMapping(value = "/group/{id}/invite", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<InviteResponse> createInvite(@RequestHeader("X-Session-Id") String sessionId,
@@ -287,8 +292,16 @@ public class Controller {
     Member me = requireMemberFromSession(sessionId);
     requireAdmin(me);
     requireSameGroup(me, id);
-    String code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-    invites.put(code, id);
+    FamilyGroup g = me.getFamilyGroup();
+    String code = g.getInviteCode();
+
+    // If null for some reason (old groups), generate and save
+    if (code == null || code.isBlank()) {
+      code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+      g.setInviteCode(code);
+      groupRepo.save(g);
+    }
+
     return ResponseEntity.status(HttpStatus.CREATED).body(new InviteResponse(code, id));
   }
 
