@@ -40,3 +40,4 @@ jobs:
             -Dsonar.organization=garaitu
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
             -Dsonar.java.binaries=target/classes
+            -Dsonar.coverage.exclusions=*/src/test/*
