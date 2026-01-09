@@ -305,7 +305,7 @@ public class Controller {
     m.setName(body.name());
     m.setContext(body.context());
     m.setFamilyGroup(g);
-    m.setRole(ROLE_MEMBER); // Passive member
+    m.setRole(me.getRole()); // Passive member
     m.setEmbedding(emb);
     // No email/password for memories
 
