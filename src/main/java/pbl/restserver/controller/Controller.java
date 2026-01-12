@@ -1,5 +1,8 @@
 package pbl.restserver.controller;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
@@ -126,22 +129,16 @@ public class Controller {
     if (bytes == null || bytes.length == 0) {
       return new float[0];
     }
-    if (bytes.length % 4 != 0) {
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad embedding bytes length");
-    }
-
-    int n = bytes.length / 4;
-    float[] out = new float[n];
-    for (int i = 0; i < n; i++) {
-      int base = i * 4;
-      int bits = ((bytes[base] & 0xFF) << 24)
-          | ((bytes[base + 1] & 0xFF) << 16)
-          | ((bytes[base + 2] & 0xFF) << 8)
-          | (bytes[base + 3] & 0xFF);
-      out[i] = Float.intBitsToFloat(bits);
-    }
+    
+    // Usamos ByteBuffer para manejar la conversión y el orden de bytes
+    FloatBuffer buf = ByteBuffer.wrap(bytes)
+        .order(ByteOrder.LITTLE_ENDIAN)  // <--- ¡AQUÍ ESTÁ LA SOLUCIÓN!
+        .asFloatBuffer();
+    
+    float[] out = new float[buf.remaining()];
+    buf.get(out);
     return out;
-  }
+}
 
   private double cosine(float[] a, float[] b) {
     if (a.length == 0 || b.length == 0 || a.length != b.length)
