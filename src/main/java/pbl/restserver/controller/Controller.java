@@ -2,6 +2,8 @@ package pbl.restserver.controller;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.http.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,6 +18,7 @@ import pbl.restserver.repositories.MemberRepository;
 @RestController
 @RequestMapping("/garAItu")
 public class Controller {
+  private static final Logger logger = LoggerFactory.getLogger(Controller.class);
 
   // Roles: admin 0, patient 1, member 2
   private static final short ROLE_ADMIN = 0;
@@ -29,8 +32,8 @@ public class Controller {
   // token -> memberId
   private final Map<String, Long> sessions = new ConcurrentHashMap<>();
 
-  // inviteCode -> groupId (en memoria)
-  private final Map<String, Long> invites = new ConcurrentHashMap<>();
+  // inviteCode -> groupId (en memoria) - REMOVED, now using DB
+  // private final Map<String, Long> invites = new ConcurrentHashMap<>();
 
   public Controller(FamilyGroupRepository groupRepo,
       MemberRepository memberRepo,
@@ -80,7 +83,8 @@ public class Controller {
   public static record RecognizeRow(Long memberId, String name, String email, String context, double similarity) {
   }
 
-  public static record CreateMemoryRequest(String name, String context, String embeddingBase64) {}
+  public static record CreateMemoryRequest(String name, String context, String embeddingBase64) {
+  }
 
   // -------------------------
   // Helpers
@@ -203,20 +207,29 @@ public class Controller {
 
   @PostMapping(value = "/auth/login", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest body) {
+    logger.info(">>> Login attempt for: {}", body.email());
     if (body.email() == null || body.email().isBlank()
-        || body.password() == null || body.password().isBlank())
+        || body.password() == null || body.password().isBlank()) {
+      logger.warn(">>> Login failed: Missing credentials");
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email and password required");
+    }
 
-     Member m = memberRepo.findByEmail(body.email())
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "The email address is not registered"));
+    Member m = memberRepo.findByEmail(body.email())
+        .orElseThrow(() -> {
+          logger.warn(">>> Login failed: Email not found - {}", body.email());
+          return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "The email address is not registered");
+        });
 
-    if (m.getPasswordHash() == null || !passwordEncoder.matches(body.password(), m.getPasswordHash()))
+    if (m.getPasswordHash() == null || !passwordEncoder.matches(body.password(), m.getPasswordHash())) {
+      logger.warn(">>> Login failed: Incorrect password for {}", body.email());
       throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Incorrect password");
+    }
 
     String token = UUID.randomUUID().toString();
     sessions.put(token, m.getId());
 
     Long gId = (m.getFamilyGroup() != null) ? m.getFamilyGroup().getId() : null;
+    logger.info(">>> Login successful for: {}", body.email());
     return ResponseEntity.status(HttpStatus.CREATED)
         .body(new SessionResponse(token, m.getId(), gId, m.getRole()));
   }
@@ -252,7 +265,7 @@ public class Controller {
     Member me = requireMemberFromSession(sessionId);
     FamilyGroup g = me.getFamilyGroup();
     if (g == null)
-       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in a group");
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in a group");
 
     if (body.name() == null || body.name().isBlank())
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name required");
@@ -292,18 +305,21 @@ public class Controller {
   public ResponseEntity<MemberResponse> joinGroup(@RequestHeader("X-Session-Id") String sessionId,
       @RequestBody JoinGroupRequest body) {
     Member me = requireMemberFromSession(sessionId);
+    logger.info(">>> Join attempt by user {} with code '{}'", me.getEmail(), body.inviteCode());
 
-    if (body.inviteCode() == null || body.inviteCode().isBlank())
+    if (body.inviteCode() == null || body.inviteCode().isBlank()) {
+      logger.warn(">>> Join failed: inviteCode required");
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "inviteCode required");
+    }
 
-    Long groupId = invites.get(body.inviteCode());
-    if (groupId == null)
-      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode");
-
-    FamilyGroup g = groupRepo.findById(groupId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Group not found"));
+    FamilyGroup g = groupRepo.findByInviteCode(body.inviteCode())
+        .orElseThrow(() -> {
+          logger.warn(">>> Join failed: Code '{}' not found in DB", body.inviteCode());
+          return new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid inviteCode");
+        });
 
     me.setFamilyGroup(g);
+    logger.info(">>> Join successful: User {} joined group {}", me.getEmail(), g.getId());
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(me)));
   }
 
@@ -317,8 +333,22 @@ public class Controller {
     requireAdmin(me);
     requireSameGroup(me, id);
 
-    String code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-    invites.put(code, id);
+    FamilyGroup g = me.getFamilyGroup();
+    // Generate new code or return existing?
+    // Let's generate a new one if it doesn't exist, or just return existing to be
+    // idempotent?
+    // User asked to SAVE it, usually implies generating one if one is not there.
+    // Ideally duplicate calls should return the same code if valid, or a new one if
+    // requested.
+    // For simplicity: check if one exists, if so return it. If not, generate.
+    String code = g.getInviteCode();
+    if (code == null || code.isBlank()) {
+      code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+      g.setInviteCode(code);
+      groupRepo.save(g);
+    }
+    // Note: If we want to rotate codes, we might need a separate endpoint or param.
+    // For now, persistent code per group seems safer.
 
     return ResponseEntity.status(HttpStatus.CREATED).body(new InviteResponse(code, id));
   }
