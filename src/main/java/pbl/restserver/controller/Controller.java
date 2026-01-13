@@ -89,6 +89,9 @@ public class Controller {
   public static record CreateMemoryRequest(String name, String context, String embeddingBase64) {
   }
 
+  public static record UpdateMemberRequest(String name, String context) {
+  }
+
   // -------------------------
   // Helpers
   // -------------------------
@@ -395,6 +398,36 @@ public class Controller {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
 
     target.setEmbedding(emb);
+    return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
+  }
+
+  @PutMapping(value = "/member/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<MemberResponse> updateMember(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable Long id,
+      @RequestBody UpdateMemberRequest body) {
+    Member me = requireMemberFromSession(sessionId);
+
+    Member target = memberRepo.findById(id)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No member"));
+
+    // Permission check: Self or Admin of the same group
+    boolean isSelf = me.getId().equals(id);
+    boolean isAdmin = (me.getRole() == ROLE_ADMIN) && (me.getFamilyGroup() != null)
+        && (target.getFamilyGroup() != null) && me.getFamilyGroup().getId().equals(target.getFamilyGroup().getId());
+
+    if (!isSelf && !isAdmin) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+    }
+
+    if (body.name() != null && !body.name().isBlank()) {
+      target.setName(body.name());
+    }
+    if (body.context() != null) { // Context can be empty string to clear it
+      target.setContext(body.context());
+    }
+    // Only name and context updates allowed per requirements
+
+    logger.info(">>> Member {} updated by {}", target.getEmail(), me.getEmail());
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
   }
 
