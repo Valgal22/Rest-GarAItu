@@ -129,16 +129,16 @@ public class Controller {
     if (bytes == null || bytes.length == 0) {
       return new float[0];
     }
-    
+
     // Usamos ByteBuffer para manejar la conversión y el orden de bytes
     FloatBuffer buf = ByteBuffer.wrap(bytes)
-        .order(ByteOrder.LITTLE_ENDIAN)  // <--- ¡AQUÍ ESTÁ LA SOLUCIÓN!
+        .order(ByteOrder.LITTLE_ENDIAN) // <--- ¡AQUÍ ESTÁ LA SOLUCIÓN!
         .asFloatBuffer();
-    
+
     float[] out = new float[buf.remaining()];
     buf.get(out);
     return out;
-}
+  }
 
   private double cosine(float[] a, float[] b) {
     if (a.length == 0 || b.length == 0 || a.length != b.length)
@@ -254,6 +254,30 @@ public class Controller {
 
     return ResponseEntity.ok(
         memberRepo.findByFamilyGroupId(id).stream().map(this::toMemberResponse).toList());
+  }
+
+  @DeleteMapping(value = "/group/{groupId}/member/{memberId}")
+  public ResponseEntity<Void> deleteMember(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable Long groupId,
+      @PathVariable Long memberId) {
+    Member me = requireMemberFromSession(sessionId);
+    requireAdmin(me);
+    requireSameGroup(me, groupId);
+
+    Member target = memberRepo.findById(memberId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
+
+    // Ensure target belongs to the same group
+    if (target.getFamilyGroup() == null || !target.getFamilyGroup().getId().equals(groupId)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Member does not belong to this group");
+    }
+
+    logger.info(">>> Unlinking member {} ({}) from group {} by admin {}", target.getName(), target.getEmail(), groupId,
+        me.getEmail());
+    target.setFamilyGroup(null);
+    memberRepo.save(target);
+
+    return ResponseEntity.noContent().build();
   }
 
   @PostMapping(value = "/group/memory", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
