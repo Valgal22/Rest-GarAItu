@@ -438,32 +438,52 @@ public class Controller {
   public ResponseEntity<List<RecognizeRow>> recognize(@RequestHeader("X-Session-Id") String sessionId,
       @PathVariable Long id,
       @RequestBody RecognizeRequest body) {
+    logger.info(">>> RECOGNIZE START: Group {}", id);
     Member me = requireMemberFromSession(sessionId);
     requireSameGroup(me, id);
 
     byte[] queryBytes = decodeBase64(body.embeddingBase64());
-    if (queryBytes.length == 0)
+    if (queryBytes.length == 0) {
+      logger.warn(">>> RECOGNIZE: Empty embeddingBase64 in request");
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+    }
 
     float[] q = bytesToFloatArray(queryBytes);
+    logger.info(">>> RECOGNIZE: queryBytes={}, floatDim={}", queryBytes.length, q.length);
 
     double minSim = body.minSim();
     int safeTop = Math.max(1, Math.min(body.top(), 50));
+    logger.info(">>> RECOGNIZE: minSim={}, safeTop={}", minSim, safeTop);
 
-    List<RecognizeRow> ranked = memberRepo.findByFamilyGroupId(id).stream()
-        .filter(m -> m.getEmbedding() != null && m.getEmbedding().length > 0)
-        .map(m -> new AbstractMap.SimpleEntry<>(m, cosine(q, bytesToFloatArray(m.getEmbedding()))))
-        .filter(e -> e.getValue() >= minSim)
-        .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
-        .limit(safeTop)
-        .map(e -> new RecognizeRow(
-            e.getKey().getId(),
-            e.getKey().getName(),
-            e.getKey().getEmail(),
-            e.getKey().getContext(),
-            e.getValue()))
-        .toList();
+    List<Member> allMembers = memberRepo.findByFamilyGroupId(id);
+    logger.info(">>> RECOGNIZE: Found {} members in DB for group {}", allMembers.size(), id);
 
+    List<RecognizeRow> ranked = new ArrayList<>();
+    for (Member m : allMembers) {
+      if (m.getEmbedding() == null || m.getEmbedding().length == 0) {
+        logger.info(">>> RECOGNIZE: Member {} ({}) has NO embedding. Skipping.", m.getId(), m.getName());
+        continue;
+      }
+      float[] targetEmb = bytesToFloatArray(m.getEmbedding());
+      double sim = cosine(q, targetEmb);
+      logger.info(">>> RECOGNIZE: Member {} ({}) floats={} sim={}", m.getId(), m.getName(), targetEmb.length, sim);
+
+      if (sim >= minSim) {
+        ranked.add(new RecognizeRow(
+            m.getId(),
+            m.getName(),
+            m.getEmail(),
+            m.getContext(),
+            sim));
+      }
+    }
+
+    ranked.sort((a, b) -> Double.compare(b.similarity(), a.similarity()));
+    if (ranked.size() > safeTop) {
+      ranked = ranked.subList(0, safeTop);
+    }
+
+    logger.info(">>> RECOGNIZE: Returning {} results", ranked.size());
     return ResponseEntity.ok(ranked);
   }
 }
