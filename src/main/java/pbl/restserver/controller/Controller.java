@@ -49,7 +49,8 @@ public class Controller {
   // -------------------------
   // DTOs
   // -------------------------
-  public static record RegisterRequest(String name, String email, String password, String context, short role) {
+  public static record RegisterRequest(String name, String email, String password, String context, short role,
+      String chatId) {
   }
 
   public static record LoginRequest(String email, String password) {
@@ -68,7 +69,7 @@ public class Controller {
   }
 
   public static record MemberResponse(Long id, Long familyGroupId, String name, String email, String context,
-      short role, boolean hasEmbedding) {
+      short role, boolean hasEmbedding, String chatId) {
   }
 
   public static record InviteResponse(String inviteCode, Long familyGroupId) {
@@ -177,7 +178,8 @@ public class Controller {
         m.getEmail(),
         m.getContext(),
         m.getRole(),
-        hasEmb);
+        hasEmb,
+        m.getTelegramChatId());
   }
 
   // -------------------------
@@ -198,6 +200,7 @@ public class Controller {
     m.setEmail(body.email());
     m.setContext(body.context());
     m.setRole(body.role());
+    m.setTelegramChatId(body.chatId());
 
     m.setPasswordHash(passwordEncoder.encode(body.password()));
     m.setEmbedding(null);
@@ -429,6 +432,29 @@ public class Controller {
 
     logger.info(">>> Member {} updated by {}", target.getEmail(), me.getEmail());
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
+  }
+
+  @GetMapping(value = "/group/{id}/admin", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<MemberResponse> getGroupAdmin(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable Long id) {
+    requireMemberFromSession(sessionId); // Seguridad: solo logueados
+
+    return memberRepo.findByFamilyGroupId(id).stream()
+        .filter(m -> m.getRole() == ROLE_ADMIN)
+        .findFirst()
+        .map(this::toMemberResponse)
+        .map(ResponseEntity::ok)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No admin found for this group"));
+  }
+
+  // En Controller.java añadimos esto:
+  @PutMapping("/member/me/telegram/{chatId}")
+  public ResponseEntity<Void> setTelegramId(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable String chatId) {
+    Member me = requireMemberFromSession(sessionId);
+    me.setTelegramChatId(chatId); // Guardamos su ID de Telegram
+    memberRepo.save(me);
+    return ResponseEntity.ok().build();
   }
 
   // -------------------------
