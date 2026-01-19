@@ -9,4 +9,6 @@ import pbl.restserver.model.FamilyGroup;
 public interface FamilyGroupRepository extends JpaRepository<FamilyGroup, Long> {
     Optional<FamilyGroup> findByInviteCode(String inviteCode);
 
+    Optional<FamilyGroup> findByName(String name);
+
 }

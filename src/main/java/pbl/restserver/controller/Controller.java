@@ -377,6 +377,28 @@ public class Controller {
     return ResponseEntity.status(HttpStatus.CREATED).body(new InviteResponse(code, id));
   }
 
+  @GetMapping(value = "/group/code", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<InviteResponse> getGroupCodeByName(@RequestHeader("X-Session-Id") String sessionId,
+      @RequestParam String name) {
+    requireMemberFromSession(sessionId);
+
+    if (name == null || name.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name required");
+    }
+
+    FamilyGroup g = groupRepo.findByName(name)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+
+    String code = g.getInviteCode();
+    if (code == null || code.isBlank()) {
+      code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+      g.setInviteCode(code);
+      groupRepo.save(g);
+    }
+
+    return ResponseEntity.ok(new InviteResponse(code, g.getId()));
+  }
+
   // -------------------------
   // EMBEDDING
   // -------------------------
