@@ -49,7 +49,8 @@ public class Controller {
   // -------------------------
   // DTOs
   // -------------------------
-  public static record RegisterRequest(String name, String email, String password, String context, short role) {
+  public static record RegisterRequest(String name, String email, String password, String context, short role,
+      String chatId) {
   }
 
   public static record LoginRequest(String email, String password) {
@@ -68,7 +69,7 @@ public class Controller {
   }
 
   public static record MemberResponse(Long id, Long familyGroupId, String name, String email, String context,
-      short role, boolean hasEmbedding) {
+      short role, boolean hasEmbedding, String chatId) {
   }
 
   public static record InviteResponse(String inviteCode, Long familyGroupId) {
@@ -177,7 +178,8 @@ public class Controller {
         m.getEmail(),
         m.getContext(),
         m.getRole(),
-        hasEmb);
+        hasEmb,
+        m.getTelegramChatId());
   }
 
   // -------------------------
@@ -198,6 +200,7 @@ public class Controller {
     m.setEmail(body.email());
     m.setContext(body.context());
     m.setRole(body.role());
+    m.setTelegramChatId(body.chatId());
 
     m.setPasswordHash(passwordEncoder.encode(body.password()));
     m.setEmbedding(null);
@@ -453,6 +456,29 @@ public class Controller {
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
   }
 
+  @GetMapping(value = "/group/{id}/admin", produces = MediaType.APPLICATION_JSON_VALUE)
+  public ResponseEntity<MemberResponse> getGroupAdmin(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable Long id) {
+    requireMemberFromSession(sessionId); // Seguridad: solo logueados
+
+    return memberRepo.findByFamilyGroupId(id).stream()
+        .filter(m -> m.getRole() == ROLE_ADMIN)
+        .findFirst()
+        .map(this::toMemberResponse)
+        .map(ResponseEntity::ok)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No admin found for this group"));
+  }
+
+  // En Controller.java añadimos esto:
+  @PutMapping("/member/me/telegram/{chatId}")
+  public ResponseEntity<Void> setTelegramId(@RequestHeader("X-Session-Id") String sessionId,
+      @PathVariable String chatId) {
+    Member me = requireMemberFromSession(sessionId);
+    me.setTelegramChatId(chatId); // Guardamos su ID de Telegram
+    memberRepo.save(me);
+    return ResponseEntity.ok().build();
+  }
+
   // -------------------------
   // RECOGNIZE
   // -------------------------
@@ -460,32 +486,52 @@ public class Controller {
   public ResponseEntity<List<RecognizeRow>> recognize(@RequestHeader("X-Session-Id") String sessionId,
       @PathVariable Long id,
       @RequestBody RecognizeRequest body) {
+    logger.info(">>> RECOGNIZE START: Group {}", id);
     Member me = requireMemberFromSession(sessionId);
     requireSameGroup(me, id);
 
     byte[] queryBytes = decodeBase64(body.embeddingBase64());
-    if (queryBytes.length == 0)
+    if (queryBytes.length == 0) {
+      logger.warn(">>> RECOGNIZE: Empty embeddingBase64 in request");
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+    }
 
     float[] q = bytesToFloatArray(queryBytes);
+    logger.info(">>> RECOGNIZE: queryBytes={}, floatDim={}", queryBytes.length, q.length);
 
     double minSim = body.minSim();
     int safeTop = Math.max(1, Math.min(body.top(), 50));
+    logger.info(">>> RECOGNIZE: minSim={}, safeTop={}", minSim, safeTop);
 
-    List<RecognizeRow> ranked = memberRepo.findByFamilyGroupId(id).stream()
-        .filter(m -> m.getEmbedding() != null && m.getEmbedding().length > 0)
-        .map(m -> new AbstractMap.SimpleEntry<>(m, cosine(q, bytesToFloatArray(m.getEmbedding()))))
-        .filter(e -> e.getValue() >= minSim)
-        .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
-        .limit(safeTop)
-        .map(e -> new RecognizeRow(
-            e.getKey().getId(),
-            e.getKey().getName(),
-            e.getKey().getEmail(),
-            e.getKey().getContext(),
-            e.getValue()))
-        .toList();
+    List<Member> allMembers = memberRepo.findByFamilyGroupId(id);
+    logger.info(">>> RECOGNIZE: Found {} members in DB for group {}", allMembers.size(), id);
 
+    List<RecognizeRow> ranked = new ArrayList<>();
+    for (Member m : allMembers) {
+      if (m.getEmbedding() == null || m.getEmbedding().length == 0) {
+        logger.info(">>> RECOGNIZE: Member {} ({}) has NO embedding. Skipping.", m.getId(), m.getName());
+        continue;
+      }
+      float[] targetEmb = bytesToFloatArray(m.getEmbedding());
+      double sim = cosine(q, targetEmb);
+      logger.info(">>> RECOGNIZE: Member {} ({}) floats={} sim={}", m.getId(), m.getName(), targetEmb.length, sim);
+
+      if (sim >= minSim) {
+        ranked.add(new RecognizeRow(
+            m.getId(),
+            m.getName(),
+            m.getEmail(),
+            m.getContext(),
+            sim));
+      }
+    }
+
+    ranked.sort((a, b) -> Double.compare(b.similarity(), a.similarity()));
+    if (ranked.size() > safeTop) {
+      ranked = ranked.subList(0, safeTop);
+    }
+
+    logger.info(">>> RECOGNIZE: Returning {} results", ranked.size());
     return ResponseEntity.ok(ranked);
   }
 }

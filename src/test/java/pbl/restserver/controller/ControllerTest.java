@@ -401,15 +401,15 @@ class ControllerTest {
   // -------------------------
   @Test
   void register_badRequest_missingFields() {
-    Controller.RegisterRequest r1 = new Controller.RegisterRequest("", "a@b.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r1 = new Controller.RegisterRequest("", "a@b.com", "pw", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex1 = assertThrows(ResponseStatusException.class, () -> controller.register(r1));
     assertStatus(ex1, HttpStatus.BAD_REQUEST);
 
-    Controller.RegisterRequest r2 = new Controller.RegisterRequest("N", " ", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r2 = new Controller.RegisterRequest("N", " ", "pw", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex2 = assertThrows(ResponseStatusException.class, () -> controller.register(r2));
     assertStatus(ex2, HttpStatus.BAD_REQUEST);
 
-    Controller.RegisterRequest r3 = new Controller.RegisterRequest("N", "a@b.com", "", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r3 = new Controller.RegisterRequest("N", "a@b.com", "", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex3 = assertThrows(ResponseStatusException.class, () -> controller.register(r3));
     assertStatus(ex3, HttpStatus.BAD_REQUEST);
   }
@@ -417,7 +417,7 @@ class ControllerTest {
   @Test
   void register_conflict_emailExists() {
     when(memberRepo.findByEmail("a@b.com")).thenReturn(Optional.of(new Member()));
-    Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER, null);
 
     ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.register(req));
     assertStatus(ex, HttpStatus.CONFLICT);
@@ -434,7 +434,7 @@ class ControllerTest {
       return m;
     });
 
-    Controller.RegisterRequest req = new Controller.RegisterRequest("New", "new@x.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest req = new Controller.RegisterRequest("New", "new@x.com", "pw", "ctx", ROLE_MEMBER, null);
     ResponseEntity<Controller.MemberResponse> resp = controller.register(req);
 
     assertEquals(HttpStatus.CREATED, resp.getStatusCode());

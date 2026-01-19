@@ -34,11 +34,22 @@ public class Member {
   @Column(name = "embedding", columnDefinition = "LONGBLOB")
   private byte[] embedding;
 
+  @Column(name = "telegram_chat_id", length = 50)
+  private String telegramChatId;
+
   /**
    * Default constructor required by JPA/Hibernate.
    */
   public Member() {
     // No need to add anything
+  }
+
+  public String getTelegramChatId() {
+    return telegramChatId;
+  }
+
+  public void setTelegramChatId(String telegramChatId) {
+    this.telegramChatId = telegramChatId;
   }
 
   public Long getId() {

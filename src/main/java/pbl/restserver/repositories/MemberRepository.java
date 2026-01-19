@@ -10,5 +10,7 @@ import java.util.List;
 public interface MemberRepository extends JpaRepository<Member, Long> {
   List<Member> findByFamilyGroupId(Long familyGroupId);
 
+  Optional<Member> findByFamilyGroupIdAndRole(Long familyGroupId, short role);
+
   Optional<Member> findByEmail(String email);
 }
