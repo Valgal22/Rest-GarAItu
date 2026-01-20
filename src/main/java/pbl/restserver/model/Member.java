@@ -34,34 +34,85 @@ public class Member {
   @Column(name = "embedding", columnDefinition = "LONGBLOB")
   private byte[] embedding;
 
-    /**
+  @Column(name = "telegram_chat_id", length = 50)
+  private String telegramChatId;
+
+  /**
    * Default constructor required by JPA/Hibernate.
    */
   public Member() {
-    //No need to add anything
+    // No need to add anything
   }
 
-  public Long getId() { return id; }
-  public void setId(Long id) { this.id = id; }
+  public String getTelegramChatId() {
+    return telegramChatId;
+  }
 
-  public FamilyGroup getFamilyGroup() { return familyGroup; }
-  public void setFamilyGroup(FamilyGroup familyGroup) { this.familyGroup = familyGroup; }      
+  public void setTelegramChatId(String telegramChatId) {
+    this.telegramChatId = telegramChatId;
+  }
 
-  public String getName() { return name; }
-  public void setName(String name) { this.name = name; }
+  public Long getId() {
+    return id;
+  }
 
-  public String getContext() { return context; }
-  public void setContext(String context) { this.context = context; }
+  public void setId(Long id) {
+    this.id = id;
+  }
 
-  public short getRole() { return role; }
-  public void setRole(short role) { this.role = role; }
+  public FamilyGroup getFamilyGroup() {
+    return familyGroup;
+  }
 
-  public String getPasswordHash() { return passwordHash; }
-  public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }       
+  public void setFamilyGroup(FamilyGroup familyGroup) {
+    this.familyGroup = familyGroup;
+  }
 
-  public String getEmail() { return email; }
-  public void setEmail(String email) { this.email = email; }
+  public String getName() {
+    return name;
+  }
 
-  public byte[] getEmbedding() { return embedding; }
-  public void setEmbedding(byte[] embedding) { this.embedding = embedding; }
+  public void setName(String name) {
+    this.name = name;
+  }
+
+  public String getContext() {
+    return context;
+  }
+
+  public void setContext(String context) {
+    this.context = context;
+  }
+
+  public short getRole() {
+    return role;
+  }
+
+  public void setRole(short role) {
+    this.role = role;
+  }
+
+  public String getPasswordHash() {
+    return passwordHash;
+  }
+
+  public void setPasswordHash(String passwordHash) {
+    this.passwordHash = passwordHash;
+  }
+
+  public String getEmail() {
+    return email;
+  }
+
+  public void setEmail(String email) {
+    this.email = email;
+  }
+
+  public byte[] getEmbedding() {
+    return embedding;
+  }
+
+  public void setEmbedding(byte[] embedding) {
+    this.embedding = embedding;
+  }
 }

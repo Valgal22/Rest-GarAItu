@@ -50,11 +50,6 @@ class ControllerTest {
     return (Map<String, Long>) getField("sessions");
   }
 
-  @SuppressWarnings("unchecked")
-  private Map<String, Long> invites() {
-    return (Map<String, Long>) getField("invites");
-  }
-
   private Object getField(String name) {
     try {
       Field f = Controller.class.getDeclaredField(name);
@@ -84,10 +79,10 @@ class ControllerTest {
     return m;
   }
 
+  // IMPORTANT: controller decodifica floats con LITTLE_ENDIAN
   private static String b64FromFloats(float... v) {
-    ByteBuffer bb = ByteBuffer.allocate(v.length * 4).order(ByteOrder.BIG_ENDIAN);
-    for (float f : v)
-      bb.putInt(Float.floatToIntBits(f));
+    ByteBuffer bb = ByteBuffer.allocate(v.length * 4).order(ByteOrder.LITTLE_ENDIAN);
+    for (float f : v) bb.putFloat(f);
     return Base64.getEncoder().encodeToString(bb.array());
   }
 
@@ -291,7 +286,7 @@ class ControllerTest {
   }
 
   // -------------------------
-  // joinGroup
+  // joinGroup (NOW: uses DB inviteCode)
   // -------------------------
   @Test
   void joinGroup_badRequest_inviteRequired() {
@@ -312,27 +307,13 @@ class ControllerTest {
     Member me = member(1L, g, ROLE_MEMBER);
     bindSession("S", me);
 
+    when(groupRepo.findByInviteCode("INVALID")).thenReturn(Optional.empty());
+
     Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("INVALID");
 
     ResponseStatusException ex = assertThrows(ResponseStatusException.class,
         () -> controller.joinGroup("S", req));
     assertStatus(ex, HttpStatus.BAD_REQUEST);
-  }
-
-  @Test
-  void joinGroup_internalError_groupNotFoundInRepo() {
-    FamilyGroup g = group(10L, "G");
-    Member me = member(1L, g, ROLE_MEMBER);
-    bindSession("S", me);
-
-    invites().put("CODE", 77L);
-    when(groupRepo.findById(77L)).thenReturn(Optional.empty());
-
-    Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("CODE");
-
-    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-        () -> controller.joinGroup("S", req));
-    assertStatus(ex, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
   @Test
@@ -342,8 +323,7 @@ class ControllerTest {
     Member me = member(1L, g, ROLE_MEMBER);
     bindSession("S", me);
 
-    invites().put("CODE", 20L);
-    when(groupRepo.findById(20L)).thenReturn(Optional.of(g2));
+    when(groupRepo.findByInviteCode("CODE")).thenReturn(Optional.of(g2));
     when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
 
     Controller.JoinGroupRequest req = new Controller.JoinGroupRequest("CODE");
@@ -355,7 +335,7 @@ class ControllerTest {
   }
 
   // -------------------------
-  // createInvite
+  // createInvite (NOW: stored in FamilyGroup.inviteCode)
   // -------------------------
   @Test
   void createInvite_forbidden_notAdmin() {
@@ -363,7 +343,8 @@ class ControllerTest {
     Member me = member(1L, g, ROLE_MEMBER);
     bindSession("S", me);
 
-    ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.createInvite("S", 10L));
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+        () -> controller.createInvite("S", 10L));
     assertStatus(ex, HttpStatus.FORBIDDEN);
   }
 
@@ -376,24 +357,49 @@ class ControllerTest {
     Member admin = member(1L, g1, ROLE_ADMIN);
     bindSession("S", admin);
 
-    ResponseStatusException ex = assertThrows(
-        ResponseStatusException.class,
+    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
         () -> controller.createInvite("S", g2Id));
-
     assertStatus(ex, HttpStatus.FORBIDDEN);
   }
 
   @Test
-  void createInvite_adminOk_storesInvite() {
+  void createInvite_adminOk_generatesAndPersistsInviteCode_ifMissing() {
     FamilyGroup g = group(10L, "G");
+    // Si tu entidad tiene inviteCode, dejamos que esté vacío para forzar generación
+    g.setInviteCode(null);
+
+    Member admin = member(1L, g, ROLE_ADMIN);
+    bindSession("S", admin);
+
+    when(groupRepo.save(any(FamilyGroup.class))).thenAnswer(inv -> inv.getArgument(0));
+
+    ResponseEntity<Controller.InviteResponse> resp = controller.createInvite("S", 10L);
+    assertEquals(HttpStatus.CREATED, resp.getStatusCode());
+    assertNotNull(resp.getBody());
+    assertEquals(10L, resp.getBody().familyGroupId());
+    assertNotNull(resp.getBody().inviteCode());
+    assertFalse(resp.getBody().inviteCode().isBlank());
+
+    // Se guarda en el group (persistente)
+    assertEquals(resp.getBody().inviteCode(), g.getInviteCode());
+    verify(groupRepo, atLeastOnce()).save(any(FamilyGroup.class));
+  }
+
+  @Test
+  void createInvite_adminOk_returnsExistingCode_ifAlreadyPresent() {
+    FamilyGroup g = group(10L, "G");
+    g.setInviteCode("EXIST123");
+
     Member admin = member(1L, g, ROLE_ADMIN);
     bindSession("S", admin);
 
     ResponseEntity<Controller.InviteResponse> resp = controller.createInvite("S", 10L);
     assertEquals(HttpStatus.CREATED, resp.getStatusCode());
     assertNotNull(resp.getBody());
-    assertEquals(10L, resp.getBody().familyGroupId());
-    assertTrue(invites().containsKey(resp.getBody().inviteCode()));
+    assertEquals("EXIST123", resp.getBody().inviteCode());
+
+    // No hace falta guardar si ya existe
+    verify(groupRepo, never()).save(any(FamilyGroup.class));
   }
 
   // -------------------------
@@ -401,15 +407,15 @@ class ControllerTest {
   // -------------------------
   @Test
   void register_badRequest_missingFields() {
-    Controller.RegisterRequest r1 = new Controller.RegisterRequest("", "a@b.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r1 = new Controller.RegisterRequest("", "a@b.com", "pw", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex1 = assertThrows(ResponseStatusException.class, () -> controller.register(r1));
     assertStatus(ex1, HttpStatus.BAD_REQUEST);
 
-    Controller.RegisterRequest r2 = new Controller.RegisterRequest("N", " ", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r2 = new Controller.RegisterRequest("N", " ", "pw", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex2 = assertThrows(ResponseStatusException.class, () -> controller.register(r2));
     assertStatus(ex2, HttpStatus.BAD_REQUEST);
 
-    Controller.RegisterRequest r3 = new Controller.RegisterRequest("N", "a@b.com", "", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest r3 = new Controller.RegisterRequest("N", "a@b.com", "", "ctx", ROLE_MEMBER, null);
     ResponseStatusException ex3 = assertThrows(ResponseStatusException.class, () -> controller.register(r3));
     assertStatus(ex3, HttpStatus.BAD_REQUEST);
   }
@@ -417,7 +423,7 @@ class ControllerTest {
   @Test
   void register_conflict_emailExists() {
     when(memberRepo.findByEmail("a@b.com")).thenReturn(Optional.of(new Member()));
-    Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest req = new Controller.RegisterRequest("N", "a@b.com", "pw", "ctx", ROLE_MEMBER, null);
 
     ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> controller.register(req));
     assertStatus(ex, HttpStatus.CONFLICT);
@@ -434,7 +440,7 @@ class ControllerTest {
       return m;
     });
 
-    Controller.RegisterRequest req = new Controller.RegisterRequest("New", "new@x.com", "pw", "ctx", ROLE_MEMBER);
+    Controller.RegisterRequest req = new Controller.RegisterRequest("New", "new@x.com", "pw", "ctx", ROLE_MEMBER, null);
     ResponseEntity<Controller.MemberResponse> resp = controller.register(req);
 
     assertEquals(HttpStatus.CREATED, resp.getStatusCode());
@@ -687,17 +693,20 @@ class ControllerTest {
   }
 
   @Test
-  void recognize_badRequest_badBytesLength_notMultipleOf4() {
+  void recognize_bytesLengthNotMultipleOf4_isNotRejected_returnsOkEmpty() {
     FamilyGroup g = group(10L, "G");
     Member me = member(1L, g, ROLE_MEMBER);
     bindSession("S", me);
 
-    String b64 = Base64.getEncoder().encodeToString(new byte[] { 1, 2, 3 });
-    Controller.RecognizeRequest req = new Controller.RecognizeRequest(b64, 0.0, 5);
+    String b64 = Base64.getEncoder().encodeToString(new byte[] { 1, 2, 3 }); // 3 bytes -> 0 floats
+    when(memberRepo.findByFamilyGroupId(10L)).thenReturn(List.of());
 
-    ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-        () -> controller.recognize("S", 10L, req));
-    assertStatus(ex, HttpStatus.BAD_REQUEST);
+    Controller.RecognizeRequest req = new Controller.RecognizeRequest(b64, 0.0, 5);
+    ResponseEntity<List<Controller.RecognizeRow>> resp = controller.recognize("S", 10L, req);
+
+    assertEquals(HttpStatus.OK, resp.getStatusCode());
+    assertNotNull(resp.getBody());
+    assertTrue(resp.getBody().isEmpty());
   }
 
   @Test
@@ -707,10 +716,10 @@ class ControllerTest {
     bindSession("S", me);
 
     Member m1 = member(11L, g, ROLE_MEMBER);
-    m1.setEmbedding(bytesFromFloats(1f, 0f, 0f));
+    m1.setEmbedding(bytesFromFloats(1f, 0f, 0f)); // dim 3
 
     Member m2 = member(22L, g, ROLE_MEMBER);
-    m2.setEmbedding(bytesFromFloats(0f, 0f));
+    m2.setEmbedding(bytesFromFloats(0f, 0f)); // dim 2
 
     when(memberRepo.findByFamilyGroupId(10L)).thenReturn(List.of(m1, m2));
 
@@ -779,4 +788,273 @@ class ControllerTest {
     assertNotNull(resp2.getBody());
     assertEquals(1, resp2.getBody().size());
   }
+
+  // -------------------------
+// deleteMember
+// -------------------------
+@Test
+void deleteMember_forbidden_notAdmin() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.deleteMember("S", 10L, 2L));
+  assertStatus(ex, HttpStatus.FORBIDDEN);
+}
+
+@Test
+void deleteMember_forbidden_otherGroup() {
+  FamilyGroup g1 = group(10L, "G1");
+  Member me = member(1L, g1, ROLE_ADMIN);
+  bindSession("S", me);
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.deleteMember("S", 20L, 2L));
+  assertStatus(ex, HttpStatus.FORBIDDEN);
+}
+
+@Test
+void deleteMember_notFound_targetMissing() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_ADMIN);
+  bindSession("S", me);
+
+  when(memberRepo.findById(99L)).thenReturn(Optional.empty());
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.deleteMember("S", 10L, 99L));
+  assertStatus(ex, HttpStatus.NOT_FOUND);
+}
+
+@Test
+void deleteMember_badRequest_targetNotInGroup() {
+  FamilyGroup g = group(10L, "G");
+  FamilyGroup other = group(20L, "O");
+  Member me = member(1L, g, ROLE_ADMIN);
+  Member target = member(2L, other, ROLE_MEMBER);
+
+  bindSession("S", me);
+  when(memberRepo.findById(2L)).thenReturn(Optional.of(target));
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.deleteMember("S", 10L, 2L));
+  assertStatus(ex, HttpStatus.BAD_REQUEST);
+}
+
+@Test
+void deleteMember_ok_unlinksMember_andReturnsNoContent() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_ADMIN);
+  Member target = member(2L, g, ROLE_MEMBER);
+
+  bindSession("S", me);
+  when(memberRepo.findById(2L)).thenReturn(Optional.of(target));
+  when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  ResponseEntity<Void> resp = controller.deleteMember("S", 10L, 2L);
+
+  assertEquals(HttpStatus.NO_CONTENT, resp.getStatusCode());
+  assertNull(target.getFamilyGroup());
+  verify(memberRepo).save(target);
+}
+
+// -------------------------
+// getGroupCodeByName
+// -------------------------
+@Test
+void getGroupCodeByName_badRequest_nameBlank() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.getGroupCodeByName("S", "   "));
+  assertStatus(ex, HttpStatus.BAD_REQUEST);
+}
+
+@Test
+void getGroupCodeByName_notFound_groupMissing() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(groupRepo.findByName("X")).thenReturn(Optional.empty());
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.getGroupCodeByName("S", "X"));
+  assertStatus(ex, HttpStatus.NOT_FOUND);
+}
+
+@Test
+void getGroupCodeByName_ok_returnsExistingCode_withoutSaving() {
+  FamilyGroup g = group(10L, "G");
+  g.setInviteCode("EXIST123");
+  Member me = member(1L, group(99L, "ANY"), ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(groupRepo.findByName("G")).thenReturn(Optional.of(g));
+
+  ResponseEntity<Controller.InviteResponse> resp = controller.getGroupCodeByName("S", "G");
+
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertNotNull(resp.getBody());
+  assertEquals("EXIST123", resp.getBody().inviteCode());
+  assertEquals(10L, resp.getBody().familyGroupId());
+  verify(groupRepo, never()).save(any());
+}
+
+@Test
+void getGroupCodeByName_ok_generatesAndSaves_whenMissing() {
+  FamilyGroup g = group(10L, "G");
+  g.setInviteCode(null);
+  Member me = member(1L, group(99L, "ANY"), ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(groupRepo.findByName("G")).thenReturn(Optional.of(g));
+  when(groupRepo.save(any(FamilyGroup.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  ResponseEntity<Controller.InviteResponse> resp = controller.getGroupCodeByName("S", "G");
+
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertNotNull(resp.getBody());
+  assertNotNull(resp.getBody().inviteCode());
+  assertFalse(resp.getBody().inviteCode().isBlank());
+  assertEquals(g.getInviteCode(), resp.getBody().inviteCode());
+  verify(groupRepo).save(g);
+}
+
+// -------------------------
+// updateMember
+// -------------------------
+@Test
+void updateMember_notFound_targetMissing() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(memberRepo.findById(2L)).thenReturn(Optional.empty());
+
+  Controller.UpdateMemberRequest req = new Controller.UpdateMemberRequest("X", "Y");
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.updateMember("S", 2L, req));
+  assertStatus(ex, HttpStatus.NOT_FOUND);
+}
+
+@Test
+void updateMember_forbidden_notSelf_notAdmin() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  Member target = member(2L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(memberRepo.findById(2L)).thenReturn(Optional.of(target));
+
+  Controller.UpdateMemberRequest req = new Controller.UpdateMemberRequest("X", "Y");
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.updateMember("S", 2L, req));
+  assertStatus(ex, HttpStatus.FORBIDDEN);
+}
+
+@Test
+void updateMember_ok_self_updatesNameAndContext() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(memberRepo.findById(1L)).thenReturn(Optional.of(me));
+  when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  Controller.UpdateMemberRequest req = new Controller.UpdateMemberRequest("Nuevo", "");
+  ResponseEntity<Controller.MemberResponse> resp = controller.updateMember("S", 1L, req);
+
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertEquals("Nuevo", me.getName());
+  assertEquals("", me.getContext());
+}
+
+@Test
+void updateMember_ok_admin_sameGroup_updatesOtherMember() {
+  FamilyGroup g = group(10L, "G");
+  Member admin = member(1L, g, ROLE_ADMIN);
+  Member target = member(2L, g, ROLE_MEMBER);
+
+  bindSession("S", admin);
+  when(memberRepo.findById(2L)).thenReturn(Optional.of(target));
+  when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  Controller.UpdateMemberRequest req = new Controller.UpdateMemberRequest("T", "C");
+  ResponseEntity<Controller.MemberResponse> resp = controller.updateMember("S", 2L, req);
+
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertEquals("T", target.getName());
+  assertEquals("C", target.getContext());
+}
+
+@Test
+void updateMember_nameBlank_doesNotOverwriteName_contextNull_doesNotTouchContext() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  me.setName("KEEP");
+  me.setContext("CTX");
+  bindSession("S", me);
+
+  when(memberRepo.findById(1L)).thenReturn(Optional.of(me));
+  when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  Controller.UpdateMemberRequest req = new Controller.UpdateMemberRequest("   ", null);
+  controller.updateMember("S", 1L, req);
+
+  assertEquals("KEEP", me.getName());
+  assertEquals("CTX", me.getContext());
+}
+
+// -------------------------
+// getGroupAdmin
+// -------------------------
+@Test
+void getGroupAdmin_notFound_whenNoAdmin() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(memberRepo.findByFamilyGroupId(10L)).thenReturn(List.of(member(2L, g, ROLE_MEMBER)));
+
+  ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+      () -> controller.getGroupAdmin("S", 10L));
+  assertStatus(ex, HttpStatus.NOT_FOUND);
+}
+
+@Test
+void getGroupAdmin_ok_returnsFirstAdmin() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  Member admin = member(2L, g, ROLE_ADMIN);
+  when(memberRepo.findByFamilyGroupId(10L)).thenReturn(List.of(member(3L, g, ROLE_MEMBER), admin));
+
+  ResponseEntity<Controller.MemberResponse> resp = controller.getGroupAdmin("S", 10L);
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertNotNull(resp.getBody());
+  assertEquals(2L, resp.getBody().id());
+}
+
+// -------------------------
+// setTelegramId
+// -------------------------
+@Test
+void setTelegramId_ok_updatesAndSaves() {
+  FamilyGroup g = group(10L, "G");
+  Member me = member(1L, g, ROLE_MEMBER);
+  bindSession("S", me);
+
+  when(memberRepo.save(any(Member.class))).thenAnswer(inv -> inv.getArgument(0));
+
+  ResponseEntity<Void> resp = controller.setTelegramId("S", "12345");
+  assertEquals(HttpStatus.OK, resp.getStatusCode());
+  assertEquals("12345", me.getTelegramChatId());
+  verify(memberRepo).save(me);
+}
+
 }
