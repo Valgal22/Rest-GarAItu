@@ -5,6 +5,7 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,15 +29,16 @@ public class Controller {
   private static final short ROLE_PATIENT = 1;
   private static final short ROLE_MEMBER = 2;
 
+  private static final String ERR_NO_MEMBER = "No member";
+  private static final String ERR_NO_SESSION = "No session";
+  private static final String ERR_FORBIDDEN = "Forbidden";
+
   private final FamilyGroupRepository groupRepo;
   private final MemberRepository memberRepo;
   private final PasswordEncoder passwordEncoder;
 
   // token -> memberId
   private final Map<String, Long> sessions = new ConcurrentHashMap<>();
-
-  // inviteCode -> groupId (en memoria) - REMOVED, now using DB
-  // private final Map<String, Long> invites = new ConcurrentHashMap<>();
 
   public Controller(FamilyGroupRepository groupRepo,
       MemberRepository memberRepo,
@@ -97,25 +99,29 @@ public class Controller {
   // Helpers
   // -------------------------
   private Member requireMemberFromSession(String sessionId) {
-    if (sessionId == null || sessionId.isBlank())
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No session");
+    if (sessionId == null || sessionId.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, ERR_NO_SESSION);
+    }
 
     Long mid = sessions.get(sessionId);
-    if (mid == null)
-      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No session");
+    if (mid == null) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, ERR_NO_SESSION);
+    }
 
     return memberRepo.findById(mid)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "No member"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, ERR_NO_MEMBER));
   }
 
   private void requireAdmin(Member me) {
-    if (me.getRole() != ROLE_ADMIN)
+    if (me.getRole() != ROLE_ADMIN) {
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin only");
+    }
   }
 
   private void requireSameGroup(Member me, Long groupId) {
-    if (me.getFamilyGroup() == null || !me.getFamilyGroup().getId().equals(groupId))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+    if (me.getFamilyGroup() == null || !me.getFamilyGroup().getId().equals(groupId)) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, ERR_FORBIDDEN);
+    }
   }
 
   private byte[] decodeBase64(String b64) {
@@ -134,9 +140,8 @@ public class Controller {
       return new float[0];
     }
 
-    // Usamos ByteBuffer para manejar la conversión y el orden de bytes
     FloatBuffer buf = ByteBuffer.wrap(bytes)
-        .order(ByteOrder.LITTLE_ENDIAN) // <--- ¡AQUÍ ESTÁ LA SOLUCIÓN!
+        .order(ByteOrder.LITTLE_ENDIAN)
         .asFloatBuffer();
 
     float[] out = new float[buf.remaining()];
@@ -145,8 +150,9 @@ public class Controller {
   }
 
   private double cosine(float[] a, float[] b) {
-    if (a.length == 0 || b.length == 0 || a.length != b.length)
+    if (a.length == 0 || b.length == 0 || a.length != b.length) {
       return -1.0;
+    }
 
     double dot = 0;
     double na = 0;
@@ -157,14 +163,16 @@ public class Controller {
       na += a[i] * a[i];
       nb += b[i] * b[i];
     }
-    if (na == 0 || nb == 0)
+    if (na == 0 || nb == 0) {
       return -1.0;
+    }
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
   private GroupResponse toGroupResponse(FamilyGroup g) {
-    if (g == null)
+    if (g == null) {
       return null;
+    }
     return new GroupResponse(g.getId(), g.getName());
   }
 
@@ -189,11 +197,13 @@ public class Controller {
   public ResponseEntity<MemberResponse> register(@RequestBody RegisterRequest body) {
     if (body.name() == null || body.name().isBlank()
         || body.email() == null || body.email().isBlank()
-        || body.password() == null || body.password().isBlank())
+        || body.password() == null || body.password().isBlank()) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name, email and password required");
+    }
 
-    if (memberRepo.findByEmail(body.email()).isPresent())
+    if (memberRepo.findByEmail(body.email()).isPresent()) {
       throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already exists");
+    }
 
     Member m = new Member();
     m.setName(body.name());
@@ -271,9 +281,8 @@ public class Controller {
     requireSameGroup(me, groupId);
 
     Member target = memberRepo.findById(memberId)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, ERR_NO_MEMBER));
 
-    // Ensure target belongs to the same group
     if (target.getFamilyGroup() == null || !target.getFamilyGroup().getId().equals(groupId)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Member does not belong to this group");
     }
@@ -291,23 +300,25 @@ public class Controller {
       @RequestBody CreateMemoryRequest body) {
     Member me = requireMemberFromSession(sessionId);
     FamilyGroup g = me.getFamilyGroup();
-    if (g == null)
+    if (g == null) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "User not in a group");
+    }
 
-    if (body.name() == null || body.name().isBlank())
+    if (body.name() == null || body.name().isBlank()) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Name required");
+    }
 
     byte[] emb = decodeBase64(body.embeddingBase64());
-    if (emb.length == 0)
+    if (emb.length == 0) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+    }
 
     Member m = new Member();
     m.setName(body.name());
     m.setContext(body.context());
     m.setFamilyGroup(g);
-    m.setRole(me.getRole()); // Passive member
+    m.setRole(me.getRole());
     m.setEmbedding(emb);
-    // No email/password for memories
 
     return ResponseEntity.status(HttpStatus.CREATED).body(toMemberResponse(memberRepo.save(m)));
   }
@@ -361,21 +372,13 @@ public class Controller {
     requireSameGroup(me, id);
 
     FamilyGroup g = me.getFamilyGroup();
-    // Generate new code or return existing?
-    // Let's generate a new one if it doesn't exist, or just return existing to be
-    // idempotent?
-    // User asked to SAVE it, usually implies generating one if one is not there.
-    // Ideally duplicate calls should return the same code if valid, or a new one if
-    // requested.
-    // For simplicity: check if one exists, if so return it. If not, generate.
+
     String code = g.getInviteCode();
     if (code == null || code.isBlank()) {
       code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
       g.setInviteCode(code);
       groupRepo.save(g);
     }
-    // Note: If we want to rotate codes, we might need a separate endpoint or param.
-    // For now, persistent code per group seems safer.
 
     return ResponseEntity.status(HttpStatus.CREATED).body(new InviteResponse(code, id));
   }
@@ -412,15 +415,22 @@ public class Controller {
     Member me = requireMemberFromSession(sessionId);
 
     Member target = memberRepo.findById(id)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No member"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, ERR_NO_MEMBER));
+
+    // NPE-safe: si target no tiene grupo, se considera forbidden (o bad request si prefieres)
+    if (target.getFamilyGroup() == null) {
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, ERR_FORBIDDEN);
+    }
 
     requireSameGroup(me, target.getFamilyGroup().getId());
-    if (!me.getId().equals(id))
+    if (!me.getId().equals(id)) {
       requireAdmin(me);
+    }
 
     byte[] emb = decodeBase64(body.embeddingBase64());
-    if (emb.length == 0)
+    if (emb.length == 0) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "embeddingBase64 required");
+    }
 
     target.setEmbedding(emb);
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
@@ -433,24 +443,24 @@ public class Controller {
     Member me = requireMemberFromSession(sessionId);
 
     Member target = memberRepo.findById(id)
-        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No member"));
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, ERR_NO_MEMBER));
 
-    // Permission check: Self or Admin of the same group
     boolean isSelf = me.getId().equals(id);
-    boolean isAdmin = (me.getRole() == ROLE_ADMIN) && (me.getFamilyGroup() != null)
-        && (target.getFamilyGroup() != null) && me.getFamilyGroup().getId().equals(target.getFamilyGroup().getId());
+    boolean isAdmin = (me.getRole() == ROLE_ADMIN)
+        && (me.getFamilyGroup() != null)
+        && (target.getFamilyGroup() != null)
+        && me.getFamilyGroup().getId().equals(target.getFamilyGroup().getId());
 
     if (!isSelf && !isAdmin) {
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+      throw new ResponseStatusException(HttpStatus.FORBIDDEN, ERR_FORBIDDEN);
     }
 
     if (body.name() != null && !body.name().isBlank()) {
       target.setName(body.name());
     }
-    if (body.context() != null) { // Context can be empty string to clear it
+    if (body.context() != null) {
       target.setContext(body.context());
     }
-    // Only name and context updates allowed per requirements
 
     logger.info(">>> Member {} updated by {}", target.getEmail(), me.getEmail());
     return ResponseEntity.ok(toMemberResponse(memberRepo.save(target)));
@@ -459,7 +469,7 @@ public class Controller {
   @GetMapping(value = "/group/{id}/admin", produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<MemberResponse> getGroupAdmin(@RequestHeader("X-Session-Id") String sessionId,
       @PathVariable Long id) {
-    requireMemberFromSession(sessionId); // Seguridad: solo logueados
+    requireMemberFromSession(sessionId);
 
     return memberRepo.findByFamilyGroupId(id).stream()
         .filter(m -> m.getRole() == ROLE_ADMIN)
@@ -469,12 +479,11 @@ public class Controller {
         .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No admin found for this group"));
   }
 
-  // En Controller.java añadimos esto:
   @PutMapping("/member/me/telegram/{chatId}")
   public ResponseEntity<Void> setTelegramId(@RequestHeader("X-Session-Id") String sessionId,
       @PathVariable String chatId) {
     Member me = requireMemberFromSession(sessionId);
-    me.setTelegramChatId(chatId); // Guardamos su ID de Telegram
+    me.setTelegramChatId(chatId);
     memberRepo.save(me);
     return ResponseEntity.ok().build();
   }
